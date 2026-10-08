@@ -397,22 +397,6 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 
--- 玩家事件
-Players.PlayerAdded:Connect(function(p)
-    p.CharacterAdded:Connect(function(c)
-        clearESP(p)
-        createESP(p)
-        updateHighlight(p, c)
-    end)
-end)
-for _,p in ipairs(Players:GetPlayers()) do
-    p.CharacterAdded:Connect(function(c)
-        clearESP(p)
-        createESP(p)
-        updateHighlight(p, c)
-    end)
-end
-
 -- Argus performance gate for the original ESP renderer.
 local ArgusESPNextUpdate = 0
 local function argusShouldUpdateESP()
@@ -421,6 +405,9 @@ local function argusShouldUpdateESP()
     end
 
     local rate = math.max(10, tonumber(_G.ArgusESPUpdateRate) or 60)
+    if type(finalAdaptiveRate) == "function" then
+        rate = math.min(rate, math.max(10, tonumber(finalAdaptiveRate()) or rate))
+    end
     local now = os.clock()
     if now < ArgusESPNextUpdate then
         return false
@@ -1023,11 +1010,34 @@ local function getBestTarget()
     local localCharacter = LocalPlayer.Character
     local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
 
+    local maxDistance = math.max(0, tonumber(_G.TargetAssistMaxDistance) or 500)
+    local fovEnabled = _G.TargetAssistFOVEnabled
+    local fovRadius = math.max(1, tonumber(_G.TargetAssistFOVRadius) or 180)
+
     for _, player in ipairs(Players:GetPlayers()) do
-        local score = getTargetScore(player, screenCenter, localRoot)
-        if score and score < bestScore then
-            bestScore = score
-            bestPlayer = player
+        if player ~= LocalPlayer and not (_G.TargetAssistTeamCheck and isSameTeam(player)) then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+
+            -- Cheap filters first: avoid LOS/raycast work for obviously invalid candidates.
+            if character and humanoid and humanoid.Health > 0 and root and localRoot then
+                local worldDistance = (localRoot.Position - root.Position).Magnitude
+                if maxDistance <= 0 or worldDistance <= maxDistance then
+                    local part = getTargetPart(character)
+                    local point, visible = part and Camera:WorldToViewportPoint(part.Position)
+                    if part and visible and point.Z > 0 then
+                        local screenDistance = (Vector2.new(point.X, point.Y) - screenCenter).Magnitude
+                        if not fovEnabled or screenDistance <= fovRadius then
+                            local score = getTargetScore(player, screenCenter, localRoot)
+                            if score and score < bestScore then
+                                bestScore = score
+                                bestPlayer = player
+                            end
+                        end
+                    end
+                end
+            end
         end
     end
 
@@ -2303,6 +2313,11 @@ function argusMobileRebuild()
         mobileLabel(ArgusMobile.Content, "STATUS: "..status, 18, 35)
         mobileLabel(ArgusMobile.Content, "Target: "..(target and target.Name or "None"), 12, 26)
         mobileLabel(ArgusMobile.Content, string.format("FPS: %.0f", ArgusUI.FPS), 12, 26)
+        mobileLabel(ArgusMobile.Content, "ESP Backend: "..tostring(_G.ArgusDrawingBackend or "Unknown"), 11, 24)
+        mobileLabel(ArgusMobile.Content, "ESP Rate: "..string.format("%.0f Hz", tonumber(_G.ArgusESPEffectiveRate) or tonumber(_G.ArgusESPUpdateRate) or 60), 11, 24)
+        mobileLabel(ArgusMobile.Content, "Aim State: "..tostring(TargetAssist.State), 11, 24)
+        mobileLabel(ArgusMobile.Content, "Head State: "..tostring(TargetAssist.HeadState), 11, 24)
+        mobileLabel(ArgusMobile.Content, "Touch Aim: "..argusBoolText(MobileTouchState.Active), 11, 24)
         mobileButton(ArgusMobile.Content, "AIM: "..argusBoolText(_G.TargetAssistEnabled), function()
             _G.TargetAssistEnabled = not _G.TargetAssistEnabled
             _G.ArgusMobileAimActive = _G.TargetAssistEnabled
@@ -2393,7 +2408,12 @@ function argusMobileRebuild()
     elseif ArgusMobile.Tab == "Settings" then
         mobileLabel(ArgusMobile.Content,"FINE CONTROL",14,30)
         mobileToggle(ArgusMobile.Content,"ESP Performance","ArgusESPPerformance")
+        mobileToggle(ArgusMobile.Content,"ESP Adaptive Rate","ArgusESPAdaptive")
         mobileCycle(ArgusMobile.Content,"ESP Update Rate","ArgusESPUpdateRate",{15,30,60,120})
+        mobileToggle(ArgusMobile.Content,"Target Cache","ArgusTargetCacheEnabled")
+        mobileToggle(ArgusMobile.Content,"State Watchdog","ArgusStateWatchdog")
+        mobileToggle(ArgusMobile.Content,"Camera Recovery","ArgusCameraRecovery")
+        mobileToggle(ArgusMobile.Content,"Fail Safe","ArgusFailSafe")
         mobileToggle(ArgusMobile.Content,"Debug Mode","ArgusDebugMode")
         mobileLabel(ArgusMobile.Content,"UI / device: "..tostring(_G.ArgusDeviceType),11,28)
         mobileLabel(ArgusMobile.Content,"右半屏啟動瞄準，左半屏保留給虛擬搖桿。",11,34)
@@ -2445,6 +2465,11 @@ function argusMobileRebuild()
         mobileLabel(ArgusMobile.Content,"FOV: "..tostring(_G.TargetAssistFOVRadius),12,26)
         mobileLabel(ArgusMobile.Content,"Selection: "..tostring(_G.ArgusTargetSelectionMode),12,26)
         mobileLabel(ArgusMobile.Content,"ESP Update: "..tostring(_G.ArgusESPUpdateRate),12,26)
+        mobileLabel(ArgusMobile.Content,"ESP Effective: "..string.format("%.0f Hz", tonumber(_G.ArgusESPEffectiveRate) or tonumber(_G.ArgusESPUpdateRate) or 60),12,26)
+        mobileLabel(ArgusMobile.Content,"ESP Backend: "..tostring(_G.ArgusDrawingBackend or "Unknown"),12,26)
+        mobileLabel(ArgusMobile.Content,"Aim State: "..tostring(TargetAssist.State),12,26)
+        mobileLabel(ArgusMobile.Content,"Head State: "..tostring(TargetAssist.HeadState),12,26)
+        mobileLabel(ArgusMobile.Content,"Touch Active: "..argusBoolText(MobileTouchState.Active),12,26)
         mobileLabel(ArgusMobile.Content,"Device: "..tostring(_G.ArgusDeviceType),12,26)
         mobileLabel(ArgusMobile.Content,"Skeleton: "..argusBoolText(_G.SkeletonESP),12,26)
     end
@@ -2710,6 +2735,8 @@ local function argusSafeNumber(v, default, minv, maxv)
     return math.clamp(v,minv,maxv)
 end
 
+_G.ArgusTargetCacheEnabled = (_G.ArgusTargetCacheEnabled ~= false)
+
 local function argusValidateConfig()
     if not _G.ArgusConfigAutoRepair then return end
     _G.MobileAimStrength=argusSafeNumber(_G.MobileAimStrength,100,0,100)
@@ -2745,7 +2772,6 @@ local function argusGetCharacterState()
             TargetAssist.CurrentTarget=nil
             TargetAssist.ToggleState=false
         end
-        autoDodgeResetState()
     end
     return character
 end
@@ -2768,6 +2794,13 @@ local function argusGetPerformanceTier()
 end
 
 local function argusCachedBestTarget()
+    if _G.ArgusTargetCacheEnabled == false then
+        local player = getBestTarget()
+        ArgusRuntime.TargetCache = player
+        ArgusRuntime.TargetCacheAt = os.clock()
+        return player
+    end
+
     local now=os.clock()
     local lifetime=argusSafeNumber(_G.ArgusTargetCacheLifetime,0.08,0.02,0.3)
     if ArgusRuntime.TargetCache and now-ArgusRuntime.TargetCacheAt<=lifetime then
@@ -2847,6 +2880,7 @@ local ArgusFinal = {
     LastUIRefresh = 0,
     LastCameraCFrame = nil,
     LastCameraType = nil,
+    LastViewportSize = nil,
     LastGoodCharacter = nil,
     TouchStarted = {},
     Connections = {},
@@ -2895,7 +2929,12 @@ end
 -- Replace only the expensive LOS decision with the bounded cache.
 local _originalTargetAssistIsValid = targetAssistIsValid
 targetAssistIsValid = function(player)
-    if not _originalTargetAssistIsValid(player) then return false end
+    local wallCheck = _G.TargetAssistWallCheck
+    _G.TargetAssistWallCheck = false
+    local valid = _originalTargetAssistIsValid(player)
+    _G.TargetAssistWallCheck = wallCheck
+    if not valid then return false end
+
     local character = player and player.Character
     local part = character and getTargetPart(character)
     return part and finalLOS(part) or false
@@ -2948,6 +2987,15 @@ finalTrackConnection(workspace:GetPropertyChangedSignal('CurrentCamera'):Connect
     finalCameraGuard()
 end))
 
+finalTrackConnection(RunService.RenderStepped:Connect(function()
+    local cam = workspace.CurrentCamera
+    if cam and cam.ViewportSize ~= ArgusFinal.LastViewportSize then
+        ArgusFinal.LastViewportSize = cam.ViewportSize
+        finalInvalidateTarget()
+        ArgusFinal.LOS = {}
+    end
+end))
+
 finalTrackConnection(LocalPlayer.CharacterAdded:Connect(function(character)
     finalInvalidateTarget()
     ArgusFinal.LOS = {}
@@ -2961,7 +3009,6 @@ finalTrackConnection(LocalPlayer.CharacterRemoving:Connect(function()
     ArgusFinal.LOS = {}
     MobileTouchState.Active = false
     MobileTouchState.Touches = {}
-    autoDodgeResetState()
 end))
 
 finalTrackConnection(Players.PlayerRemoving:Connect(function(player)
@@ -2976,7 +3023,15 @@ RunService:BindToRenderStep('NexusArgusFinalGuard',Enum.RenderPriority.First.Val
     finalTouchCleanup()
 
     local now = os.clock()
-    if now - ArgusFinal.LastSearch >= _G.ArgusTargetSearchInterval then
+    local searchInterval = _G.ArgusTargetSearchInterval
+    local fps = ArgusRuntime.FPS or 60
+    if fps < 30 then
+        searchInterval = math.max(searchInterval, 0.08)
+    elseif fps < 45 then
+        searchInterval = math.max(searchInterval, 0.05)
+    end
+
+    if now - ArgusFinal.LastSearch >= searchInterval then
         ArgusFinal.LastSearch = now
         if isAimActive() then
             local candidate = argusCachedBestTarget()
