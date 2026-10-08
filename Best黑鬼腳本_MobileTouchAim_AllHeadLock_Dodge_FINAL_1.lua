@@ -17,29 +17,12 @@ if not RunService:IsClient() then
     return
 end
 
--- Prevent duplicate runtime instances from stacking RenderStep/Input connections.
--- The existing running instance remains authoritative.
-if _G.ArgusRuntimeLoaded then
-    -- A previous instance is already alive: ask it to reveal the existing UI
-    -- instead of stacking a second runtime.
-    if type(_G.ArgusShowUI) == "function" then
-        pcall(_G.ArgusShowUI)
-        return
-    end
-
-    -- Previous execution stopped before UI initialization completed.
-    -- Clear the stale guard so this load can recover normally.
-    _G.ArgusRuntimeLoaded = nil
-end
-
 local Players = game:GetService("Players")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
     return
 end
-
-_G.ArgusRuntimeLoaded = true
 
 local ESPObjects = {}
 
@@ -250,12 +233,8 @@ local BonesR6 = {
     {"Torso","Left Leg"},{"Torso","Right Leg"},
 }
 
-local function isSameTeam(player, scope)
-    local enabled = scope == "Target"
-        and _G.TargetAssistTeamCheck
-        or _G.TeamCheck
-
-    if not enabled then return false end
+local function isSameTeam(player)
+    if not _G.TeamCheck then return false end
     if not LocalPlayer.Team or not player.Team then return false end
     return LocalPlayer.Team == player.Team
 end
@@ -441,9 +420,6 @@ end
 
 -- RenderStepped
 RunService.RenderStepped:Connect(function()
-    if _G.TargetAssistVisualsHidden and not (_G.ESPEnabled and _G.SkeletonESP) then
-        return
-    end
     if not argusShouldUpdateESP() then
         return
     end
@@ -751,7 +727,6 @@ _G.TargetAssistSwitchScoreRatio = tonumber(_G.TargetAssistSwitchScoreRatio) or 0
 _G.TargetAssistReacquireDelay = tonumber(_G.TargetAssistReacquireDelay) or 0.12
 
 local humanizedTime = 0
-local ArgusRuntime
 
 local TargetAssistFOV = Drawing.new("Circle")
 TargetAssistFOV.Visible = false
@@ -783,15 +758,7 @@ end
 
 local function getPredictedPosition(targetPart)
     local position = targetPart.Position
-    local rawVelocity = targetPart.AssemblyLinearVelocity
-    local velocity = rawVelocity
-
-    -- Smooth target velocity to reduce prediction noise from animation/network jitter.
-    local previousVelocity = ArgusRuntime.TargetVelocity[targetPart]
-    if previousVelocity then
-        velocity = previousVelocity:Lerp(rawVelocity, 0.35)
-    end
-    ArgusRuntime.TargetVelocity[targetPart] = velocity
+    local velocity = targetPart.AssemblyLinearVelocity
 
     if not _G.TargetAssistPredictionEnabled then
         return position + _G.TargetAssistOffset
@@ -802,31 +769,17 @@ local function getPredictedPosition(targetPart)
         tonumber(_G.TargetAssistPredictionTime) or 0
     )
 
-    local projectileTime = 0
+    -- 移動預測
+    if _G.TargetAssistMovementPrediction then
+        position += velocity * predictionTime
+    end
+
+    -- 子彈速度預測：使用目前相機到目標的距離 / projectile speed
     local projectileSpeed = tonumber(_G.TargetAssistProjectileSpeed) or 0
     if projectileSpeed > 0 then
         local distance = (Camera.CFrame.Position - targetPart.Position).Magnitude
-        projectileTime = distance / projectileSpeed
-    end
-
-    -- Avoid double-leading when both movement and projectile prediction are enabled.
-    -- Use the stronger estimate, then clamp it to prevent extreme over-leading.
-    local leadTime = 0
-    if _G.TargetAssistMovementPrediction then
-        leadTime = math.max(leadTime, predictionTime)
-    end
-    if projectileSpeed > 0 then
-        leadTime = math.max(leadTime, projectileTime)
-    end
-
-    local maxPrediction = math.clamp(
-        tonumber(_G.TargetAssistMaxPredictionTime) or 0.35,
-        0,
-        1.5
-    )
-    leadTime = math.min(leadTime, maxPrediction)
-    if leadTime > 0 then
-        position += velocity * leadTime
+        local projectileTime = distance / projectileSpeed
+        position += velocity * projectileTime
     end
 
     return position + _G.TargetAssistOffset
@@ -894,7 +847,7 @@ local function targetAssistIsValid(player)
         return false
     end
 
-    if isSameTeam(player, "Target") then
+    if _G.TargetAssistTeamCheck and isSameTeam(player) then
         return false
     end
 
@@ -993,22 +946,15 @@ local function getTargetScore(player, screenCenter, localRoot)
     end
 
     local mode = _G.ArgusTargetSelectionMode or "Crosshair"
-    local crosshairWeight = math.max(0, tonumber(_G.ArgusWeightCrosshair) or 1.0)
-    local distanceWeight = math.max(0, tonumber(_G.ArgusWeightDistance) or 0.15)
-    local healthWeight = math.max(0, tonumber(_G.ArgusWeightHealth) or 0.0)
-
     local score
     if mode == "Distance" then
         score = distanceNorm
     elseif mode == "Health" then
         score = healthNorm
     elseif mode == "Balanced" then
-        score = (screenNorm * crosshairWeight)
-            + (distanceNorm * distanceWeight)
-            + (healthNorm * healthWeight)
+        score = (screenNorm * 1.0) + (distanceNorm * 0.35) + (healthNorm * 0.15)
     else
-        -- Crosshair remains the default and therefore keeps the original feel.
-        score = screenNorm * crosshairWeight
+        score = screenNorm
     end
 
     return score, screenDistance, worldDistance
@@ -1071,7 +1017,7 @@ local function getBestTarget()
     local fovRadius = math.max(1, tonumber(_G.TargetAssistFOVRadius) or 180)
 
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and not isSameTeam(player, "Target") then
+        if player ~= LocalPlayer and not (_G.TargetAssistTeamCheck and isSameTeam(player)) then
             local character = player.Character
             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
             local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -1149,8 +1095,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if input.UserInputType == Enum.UserInputType.Touch and isMobileTouchMode() then
         if not isTouchOnMobileUI(input.Position) and isMobileAimTouchAllowed(input.Position) then
             MobileTouchState.Touches[input] = true
-            _G.ArgusTouchStartedAt = _G.ArgusTouchStartedAt or {}
-            _G.ArgusTouchStartedAt[input] = os.clock()
             MobileTouchState.Active = true
             _G.ArgusMobileAimActive = true
         end
@@ -1174,9 +1118,6 @@ UserInputService.InputEnded:Connect(function(input)
     if not isMobileTouchMode() then return end
 
     MobileTouchState.Touches[input] = nil
-    if _G.ArgusTouchStartedAt then
-        _G.ArgusTouchStartedAt[input] = nil
-    end
     MobileTouchState.Active = next(MobileTouchState.Touches) ~= nil
     _G.ArgusMobileAimActive = MobileTouchState.Active
 end)
@@ -1334,9 +1275,8 @@ local function updateTargetAssist(dt)
     -- 手機專用強度：Aimbot 開啟即為強鎖，滑桿只調整跟隨力度。
     if isMobileTouchMode() then
         local strength = math.clamp(tonumber(_G.MobileAimStrength) or 100, 0, 100) / 100
-        -- Non-linear response: low values stay controllable, high values become noticeably stronger.
-        local strengthCurve = strength ^ 1.25
-        local mobileSmooth = 1.5 + strengthCurve * 48
+        -- 0% 保留極低跟隨，100% 接近直接鎖定。
+        local mobileSmooth = 0.35 + strength * 35
         smoothness = math.max(smoothness, mobileSmooth)
     end
 
@@ -1416,17 +1356,7 @@ local function updateTargetAssist(dt)
     predictedPosition += getHumanizedOffset(dt)
     local targetCFrame = CFrame.lookAt(cameraPosition, predictedPosition)
     local alpha = 1 - math.exp(-smoothness * math.max(dt, 0))
-
-    -- Deadzone prevents tiny one-pixel corrections from producing visible micro-jitter.
-    local currentLook = Camera.CFrame.LookVector
-    local desiredLook = targetCFrame.LookVector
-    local dot = math.clamp(currentLook:Dot(desiredLook), -1, 1)
-    local angularError = math.deg(math.acos(dot))
-    local deadzone = math.max(0, tonumber(_G.TargetAssistDeadzone) or 0.12)
-
-    if angularError > deadzone then
-        Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, math.clamp(alpha, 0, 1))
-    end
+    Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, math.clamp(alpha, 0, 1))
 end
 
 RunService:BindToRenderStep(
@@ -1477,8 +1407,6 @@ if ThirdPersonState.Enabled then task.defer(function() applyThirdPerson(true) en
 _G.ArgusUIEnabled = true
 _G.ArgusUIKey = Enum.KeyCode.RightControl
 _G.ArgusDebugMode = false
-_G.TargetAssistMaxPredictionTime = tonumber(_G.TargetAssistMaxPredictionTime) or 0.35
-_G.TargetAssistDeadzone = tonumber(_G.TargetAssistDeadzone) or 0.12
 _G.ArgusESPPerformance = true
 _G.ArgusESPUpdateRate = 60
 _G.ArgusTargetSelectionMode = "Crosshair"
@@ -1494,8 +1422,8 @@ local ArgusUI = {
     Tab = "Dashboard",
     X = 70,
     Y = 90,
-    W = 620,
-    H = 600,
+    W = 480,
+    H = 560,
     Dragging = false,
     DragOffset = Vector2.zero,
     ActiveSlider = nil,
@@ -1507,18 +1435,12 @@ local ArgusUI = {
     FPSClock = os.clock(),
 }
 
-local argusRebuildBody
 local ArgusProfiles = {}
 local ArgusKeybinds = {
     AimToggle = _G.TargetAssistToggleKey,
     UI = _G.ArgusUIKey,
     VisualHide = Enum.KeyCode.RightShift,
 }
-
-_G.ArgusShowUI = function()
-    ArgusUI.Open = true
-    pcall(argusRebuildBody)
-end
 
 local function argusNewSquare(filled, thickness)
     local x = Drawing.new("Square")
@@ -1547,9 +1469,6 @@ local ArgusDraw = {
     Header = argusNewSquare(true),
     Accent = argusNewSquare(true),
     TabLine = argusNewSquare(true),
-    Sidebar = argusNewSquare(true),
-    ContentPanel = argusNewSquare(true),
-    TopMeta = argusNewText(10),
     Title = argusNewText(18),
     Subtitle = argusNewText(11),
     TabTexts = {},
@@ -1815,13 +1734,12 @@ local function argusRenderSliders()
     end
 end
 
-argusRebuildBody = function()
+local function argusRebuildBody()
     argusDestroyControls()
 
-    -- ImGui-inspired two-column layout: compact navigation rail + dense content inspector.
-    local x = ArgusUI.X + 168
+    local x = ArgusUI.X + 22
     local y = ArgusUI.Y + 91
-    local w = ArgusUI.W - 190
+    local w = ArgusUI.W - 44
 
     if ArgusUI.Tab == "Dashboard" then
         local status, target = argusGetTargetStatus()
@@ -2009,7 +1927,7 @@ end
 
 local ArgusInput = UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
-    if _G.ArgusUIEnabled and input.KeyCode == _G.ArgusUIKey then
+    if input.KeyCode == _G.ArgusUIKey then
         ArgusUI.Open = not ArgusUI.Open
         argusRebuildBody()
         return
@@ -2022,10 +1940,9 @@ local ArgusInput = UserInputService.InputBegan:Connect(function(input, processed
             ArgusUI.DragOffset=mouse-Vector2.new(ArgusUI.X,ArgusUI.Y)
             return
         end
-        for i,tab in ipairs(ArgusTabs) do
+        for _,tab in ipairs(ArgusTabs) do
             local t=ArgusDraw.TabTexts[tab]
-            local tabY=ArgusUI.Y+70+(i-1)*36
-            if t and mouse.X >= ArgusUI.X+8 and mouse.X <= ArgusUI.X+146 and mouse.Y >= tabY-8 and mouse.Y <= tabY+25 then
+            if t and mouse.X >= t.Position.X-4 and mouse.X <= t.Position.X+92 and mouse.Y >= t.Position.Y-4 and mouse.Y <= t.Position.Y+22 then
                 ArgusUI.Tab=tab
                 argusRebuildBody()
                 return
@@ -2081,7 +1998,7 @@ UserInputService.InputChanged:Connect(function(input)
     elseif ArgusUI.ActiveSlider then
         argusSetSlider(ArgusUI.ActiveSlider,mouse.X)
     end
-    end)
+end)
 
 local function argusUpdateTargetWeights()
     -- Selection weighting is exposed as a scoring configuration for future target modes.
@@ -2133,44 +2050,30 @@ RunService.RenderStepped:Connect(function()
         ArgusDraw.Header.Color=Color3.fromRGB(18,18,18)
         ArgusDraw.Header.Visible=true
 
-        ArgusDraw.Accent.Position=Vector2.new(mx+2,my+70+(table.find(ArgusTabs,ArgusUI.Tab)-1)*36)
-        ArgusDraw.Accent.Size=Vector2.new(3,30)
+        ArgusDraw.Accent.Position=Vector2.new(mx,my+46)
+        ArgusDraw.Accent.Size=Vector2.new(ArgusUI.W,2)
         ArgusDraw.Accent.Color=_G.ArgusUIAccent
         ArgusDraw.Accent.Visible=true
 
-        ArgusDraw.TabLine.Position=Vector2.new(mx+150,my+48)
-        ArgusDraw.TabLine.Size=Vector2.new(ArgusUI.W-150,1)
+        ArgusDraw.TabLine.Position=Vector2.new(mx,my+70)
+        ArgusDraw.TabLine.Size=Vector2.new(ArgusUI.W,1)
         ArgusDraw.TabLine.Color=Color3.fromRGB(45,45,45)
         ArgusDraw.TabLine.Visible=true
 
-        ArgusDraw.Sidebar.Position=Vector2.new(mx,my+48)
-        ArgusDraw.Sidebar.Size=Vector2.new(150,ArgusUI.H-48)
-        ArgusDraw.Sidebar.Color=Color3.fromRGB(9,9,9)
-        ArgusDraw.Sidebar.Visible=true
-
-        ArgusDraw.ContentPanel.Position=Vector2.new(mx+150,my+49)
-        ArgusDraw.ContentPanel.Size=Vector2.new(ArgusUI.W-150,ArgusUI.H-49)
-        ArgusDraw.ContentPanel.Color=Color3.fromRGB(13,13,13)
-        ArgusDraw.ContentPanel.Visible=true
-
-        ArgusDraw.Title.Text="NEXUS"
+        ArgusDraw.Title.Text="ARGUS"
         ArgusDraw.Title.Position=Vector2.new(mx+18,my+9)
         ArgusDraw.Title.Visible=true
         ArgusDraw.Title.Color=_G.ArgusUIAccent
-        ArgusDraw.Subtitle.Text="AI CONTROL CENTER"
-        ArgusDraw.Subtitle.Position=Vector2.new(mx+86,my+13)
+        ArgusDraw.Subtitle.Text="CONTROL CENTER"
+        ArgusDraw.Subtitle.Position=Vector2.new(mx+82,my+13)
         ArgusDraw.Subtitle.Visible=true
-        ArgusDraw.TopMeta.Text=string.format("FPS %.0f  |  %s  |  %s",ArgusUI.FPS,tostring(_G.ArgusDeviceType or "Desktop"),tostring(_G.ArgusDrawingBackend or "Unknown"))
-        ArgusDraw.TopMeta.Position=Vector2.new(mx+ArgusUI.W-250,my+15)
-        ArgusDraw.TopMeta.Color=Color3.fromRGB(165,165,165)
-        ArgusDraw.TopMeta.Visible=true
 
-        local tabHeight=36
+        local tabWidth=ArgusUI.W/#ArgusTabs
         for i,tab in ipairs(ArgusTabs) do
             local t=ArgusDraw.TabTexts[tab]
-            t.Text=string.upper(tab)
-            t.Position=Vector2.new(mx+18,my+70+(i-1)*tabHeight)
-            t.Color=(ArgusUI.Tab==tab) and _G.ArgusUIAccent or Color3.fromRGB(145,145,145)
+            t.Text=tab
+            t.Position=Vector2.new(mx+(i-1)*tabWidth+8,my+54)
+            t.Color=(ArgusUI.Tab==tab) and _G.ArgusUIAccent or Color3.fromRGB(155,155,155)
             t.Visible=true
         end
 
@@ -2179,8 +2082,8 @@ RunService.RenderStepped:Connect(function()
         ArgusDraw.Status.Color=argusStatusColor(argusGetTargetStatus())
         ArgusDraw.Status.Visible=true
 
-        ArgusDraw.Footer.Text="RCTRL UI   |   RSHIFT Visual Hide"
-        ArgusDraw.Footer.Position=Vector2.new(mx+ArgusUI.W-215,my+ArgusUI.H-32)
+        ArgusDraw.Footer.Text="RightControl: UI  |  RightShift: Visual Hide"
+        ArgusDraw.Footer.Position=Vector2.new(mx+ArgusUI.W-225,my+ArgusUI.H-32)
         ArgusDraw.Footer.Visible=true
 
         if ArgusUI.Toast and os.clock()<ArgusUI.ToastUntil then
@@ -2195,11 +2098,8 @@ RunService.RenderStepped:Connect(function()
         ArgusDraw.Header.Visible=false
         ArgusDraw.Accent.Visible=false
         ArgusDraw.TabLine.Visible=false
-        ArgusDraw.Sidebar.Visible=false
-        ArgusDraw.ContentPanel.Visible=false
         ArgusDraw.Title.Visible=false
         ArgusDraw.Subtitle.Visible=false
-        ArgusDraw.TopMeta.Visible=false
         ArgusDraw.Status.Visible=false
         ArgusDraw.Footer.Visible=false
         for _,t in pairs(ArgusDraw.TabTexts) do t.Visible=false end
@@ -2209,10 +2109,10 @@ RunService.RenderStepped:Connect(function()
     if ArgusUI.Open then
         argusRenderSliders()
     end
-end
+end)
 
-ArgusUI.Open = true
 argusRebuildBody()
+argusToast("Argus Control Center ready")
 
 
 -- =========================================================
@@ -2495,8 +2395,6 @@ function argusMobileRebuild()
         mobileNumber(ArgusMobile.Content,"FOV Radius","TargetAssistFOVRadius",20,600,5)
         mobileNumber(ArgusMobile.Content,"Max Distance","TargetAssistMaxDistance",0,2000,10)
         mobileNumber(ArgusMobile.Content,"Prediction Time","TargetAssistPredictionTime",0,0.5,0.01)
-        mobileNumber(ArgusMobile.Content,"Max Prediction","TargetAssistMaxPredictionTime",0,1.5,0.01)
-        mobileNumber(ArgusMobile.Content,"Aim Deadzone","TargetAssistDeadzone",0,2,0.05)
         mobileNumber(ArgusMobile.Content,"Projectile Speed","TargetAssistProjectileSpeed",0,10000,50)
         mobileNumber(ArgusMobile.Content,"Secondary Delay / 二次定位延遲","TargetAssistSecondaryDelay",0,0.5,0.01)
         mobileNumber(ArgusMobile.Content,"Secondary Blend / 二次定位過渡","TargetAssistSecondaryBlendTime",0.01,0.5,0.01)
@@ -2653,7 +2551,7 @@ local function argusCreateMobileUI()
     title.BackgroundColor3=Color3.fromRGB(18,18,18)
     title.BorderSizePixel=0
     title.Size=UDim2.new(1,0,0,46)
-    title.Text="NEXUS AI  /  "..tostring(_G.ArgusDeviceType)
+    title.Text="ARGUS  /  "..tostring(_G.ArgusDeviceType)
     title.TextColor3=Color3.fromRGB(255,255,255)
     title.TextSize=16
     title.Font=Enum.Font.GothamBold
@@ -2666,67 +2564,48 @@ local function argusCreateMobileUI()
     padding.Parent=title
 
     local tabs=Instance.new("ScrollingFrame")
-    tabs.Name="Navigation"
-    tabs.BackgroundColor3=Color3.fromRGB(9,9,9)
+    tabs.BackgroundColor3=Color3.fromRGB(12,12,12)
     tabs.BorderSizePixel=0
     tabs.Position=UDim2.fromOffset(0,46)
-    tabs.Size=UDim2.fromOffset(112,0)
-    tabs.Size=UDim2.new(0,112,1,-46)
+    tabs.Size=UDim2.new(1,0,0,42)
     tabs.ScrollBarThickness=2
-    tabs.ScrollingDirection=Enum.ScrollingDirection.Y
-    tabs.AutomaticCanvasSize=Enum.AutomaticSize.Y
+    tabs.ScrollingDirection=Enum.ScrollingDirection.X
+    tabs.AutomaticCanvasSize=Enum.AutomaticSize.X
     tabs.CanvasSize=UDim2.new()
     tabs.Parent=frame
 
     local tabLayout=Instance.new("UIListLayout")
-    tabLayout.FillDirection=Enum.FillDirection.Vertical
-    tabLayout.Padding=UDim.new(0,3)
+    tabLayout.FillDirection=Enum.FillDirection.Horizontal
+    tabLayout.Padding=UDim.new(0,4)
     tabLayout.Parent=tabs
-
-    local tabPadding=Instance.new("UIPadding")
-    tabPadding.PaddingTop=UDim.new(0,12)
-    tabPadding.PaddingLeft=UDim.new(0,8)
-    tabPadding.PaddingRight=UDim.new(0,8)
-    tabPadding.Parent=tabs
 
     local tabNames={"Dashboard","Visuals","Target","Settings","Profiles","Keybinds","Debug"}
     for _,name in ipairs(tabNames) do
         local b=Instance.new("TextButton")
-        b.Size=UDim2.new(1,0,0,38)
-        b.BackgroundColor3=Color3.fromRGB(16,16,16)
-        b.BorderSizePixel=0
-        b.TextColor3=Color3.fromRGB(175,175,175)
+        b.Size=UDim2.fromOffset(92,38)
+        b.BackgroundColor3=Color3.fromRGB(22,22,22)
+        b.BorderColor3=Color3.fromRGB(70,70,70)
+        b.TextColor3=Color3.fromRGB(230,230,230)
         b.Font=Enum.Font.GothamSemibold
         b.TextSize=11
-        b.TextXAlignment=Enum.TextXAlignment.Left
-        b.Text="  "..string.upper(name)
+        b.Text=name
         b.Parent=tabs
         b.Activated:Connect(function()
             ArgusMobile.Tab=name
             argusMobileRebuild()
             for _,other in ipairs(tabs:GetChildren()) do
                 if other:IsA("TextButton") then
-                    other.BackgroundColor3=(other==b) and Color3.fromRGB(38,38,38) or Color3.fromRGB(16,16,16)
-                    other.TextColor3=(other==b) and Color3.fromRGB(255,255,255) or Color3.fromRGB(175,175,175)
+                    other.BackgroundColor3=(other==b) and Color3.fromRGB(50,50,50) or Color3.fromRGB(22,22,22)
                 end
             end
         end)
     end
 
-    -- Initial active state mirrors the selected navigation item.
-    for _,other in ipairs(tabs:GetChildren()) do
-        if other:IsA("TextButton") then
-            local active = other.Text:find(string.upper(ArgusMobile.Tab), 1, true) ~= nil
-            other.BackgroundColor3 = active and Color3.fromRGB(38,38,38) or Color3.fromRGB(16,16,16)
-            other.TextColor3 = active and Color3.fromRGB(255,255,255) or Color3.fromRGB(175,175,175)
-        end
-    end
-
     local scroll=Instance.new("ScrollingFrame")
     scroll.Name="Content"
-    scroll.Position=UDim2.fromOffset(122,56)
-    scroll.Size=UDim2.new(1,-132,1,-66)
-    scroll.BackgroundColor3=Color3.fromRGB(13,13,13)
+    scroll.Position=UDim2.fromOffset(10,94)
+    scroll.Size=UDim2.new(1,-20,1,-104)
+    scroll.BackgroundColor3=Color3.fromRGB(10,10,10)
     scroll.BorderColor3=Color3.fromRGB(45,45,45)
     scroll.ScrollBarThickness=5
     scroll.AutomaticCanvasSize=Enum.AutomaticSize.Y
@@ -2841,12 +2720,11 @@ _G.ArgusStateWatchdog = true
 _G.ArgusConfigAutoRepair = true
 _G.ArgusDebugMonitor = false
 
-ArgusRuntime = {
+local ArgusRuntime = {
     FPS=60,
     FrameEMA=60,
     TargetCache=nil,
     TargetCacheAt=0,
-    TargetVelocity={},
     LastCamera=Camera,
     LastCharacter=nil,
     Connections={},
@@ -2872,8 +2750,6 @@ local function argusValidateConfig()
     _G.TargetAssistTargetSwitchDelay=argusSafeNumber(_G.TargetAssistTargetSwitchDelay,0.15,0,2)
     _G.TargetAssistMinimumLockTime=argusSafeNumber(_G.TargetAssistMinimumLockTime,0.12,0,3)
     _G.TargetAssistReacquireDelay=argusSafeNumber(_G.TargetAssistReacquireDelay,0.12,0,2)
-    _G.TargetAssistMaxPredictionTime=argusSafeNumber(_G.TargetAssistMaxPredictionTime,0.35,0,1.5)
-    _G.TargetAssistDeadzone=argusSafeNumber(_G.TargetAssistDeadzone,0.12,0,2)
 end
 argusValidateConfig()
 
@@ -2931,12 +2807,8 @@ local function argusCachedBestTarget()
     local lifetime=argusSafeNumber(_G.ArgusTargetCacheLifetime,0.08,0.02,0.3)
     if ArgusRuntime.TargetCache and now-ArgusRuntime.TargetCacheAt<=lifetime then
         local player=ArgusRuntime.TargetCache
-        if player and player.Parent==Players then
-            local character = player.Character
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            if humanoid and humanoid.Health > 0 and targetAssistIsValid(player) then
-                return player
-            end
+        if player and player.Parent==Players and targetAssistIsValid(player) then
+            return player
         end
     end
     local player=getBestTarget()
@@ -2975,13 +2847,6 @@ Players.PlayerAdded:Connect(function()
     ArgusRuntime.TargetCache=nil
 end)
 Players.PlayerRemoving:Connect(function(player)
-    if player.Character then
-        for part in pairs(ArgusRuntime.TargetVelocity) do
-            if part and part:IsDescendantOf(player.Character) then
-                ArgusRuntime.TargetVelocity[part] = nil
-            end
-        end
-    end
     if ArgusRuntime.TargetCache==player then
         ArgusRuntime.TargetCache=nil
         if TargetAssist.CurrentTarget==player then
@@ -3047,8 +2912,6 @@ local function finalInvalidateTarget()
     ArgusFinal.TargetAt = 0
     ArgusRuntime.TargetCache = nil
     ArgusRuntime.TargetCacheAt = 0
-    ArgusRuntime.TargetVelocity = {}
-    ArgusFinal.LOS = {}
 end
 
 -- Short LOS cache: enough to reduce repeated raycasts while still reacting quickly to walls.
@@ -3070,14 +2933,9 @@ local _originalTargetAssistIsValid = targetAssistIsValid
 targetAssistIsValid = function(player)
     local wallCheck = _G.TargetAssistWallCheck
     _G.TargetAssistWallCheck = false
-
-    local ok, valid = pcall(_originalTargetAssistIsValid, player)
-
+    local valid = _originalTargetAssistIsValid(player)
     _G.TargetAssistWallCheck = wallCheck
-
-    if not ok or not valid then
-        return false
-    end
+    if not valid then return false end
 
     local character = player and player.Character
     local part = character and getTargetPart(character)
@@ -3096,31 +2954,8 @@ finalAdaptiveRate = function()
 end
 
 local function finalTouchCleanup()
-    local activeCount = 0
-    local now = os.clock()
-    local startedMap = _G.ArgusTouchStartedAt or {}
-
-    for input, startedAt in pairs(startedMap) do
-        ArgusFinal.TouchStarted[input] = startedAt
-    end
-
-    for input, startedAt in pairs(ArgusFinal.TouchStarted) do
-        local alive = input
-            and input.UserInputState ~= Enum.UserInputState.End
-            and input.UserInputState ~= Enum.UserInputState.Cancel
-
-        if not alive or (startedAt and now - startedAt > 10) then
-            ArgusFinal.TouchStarted[input] = nil
-            startedMap[input] = nil
-        else
-            activeCount += 1
-        end
-    end
-
-    if activeCount == 0 and MobileTouchState.Active then
-        MobileTouchState.Active = false
-        MobileTouchState.Touches = {}
-        _G.ArgusMobileAimActive = false
+    for input in pairs(ArgusFinal.TouchStarted) do
+        if input == nil then ArgusFinal.TouchStarted[input] = nil end
     end
 end
 
@@ -3196,9 +3031,6 @@ RunService:BindToRenderStep('NexusArgusFinalGuard',Enum.RenderPriority.First.Val
         searchInterval = math.max(searchInterval, 0.08)
     elseif fps < 45 then
         searchInterval = math.max(searchInterval, 0.05)
-    end
-    if isMobileTouchMode() then
-        searchInterval = math.max(searchInterval, 0.028)
     end
 
     if now - ArgusFinal.LastSearch >= searchInterval then
@@ -3306,7 +3138,7 @@ local function argusCheckESPHealth()
 end
 
 local function argusCheckTargetAssistHealth()
-    if not _G.TargetAssistEnabled or _G.ArgusFailSafe == false then
+    if not _G.TargetAssistEnabled then
         ArgusModuleHealth.TargetAssist = "Disabled"
         ArgusModuleHealth.HeadLock = "Disabled"
         return
