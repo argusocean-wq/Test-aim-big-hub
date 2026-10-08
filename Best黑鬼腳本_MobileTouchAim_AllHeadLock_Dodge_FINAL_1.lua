@@ -2211,7 +2211,7 @@ RunService.RenderStepped:Connect(function()
     end
 end
 
-ArgusUI.Open = false
+ArgusUI.Open = true
 argusRebuildBody()
 
 
