@@ -22,7 +22,6 @@ end
 if _G.ArgusRuntimeLoaded then
     return
 end
-_G.ArgusRuntimeLoaded = true
 
 local Players = game:GetService("Players")
 local Camera = workspace.CurrentCamera
@@ -30,6 +29,8 @@ local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
     return
 end
+
+_G.ArgusRuntimeLoaded = true
 
 local ESPObjects = {}
 
@@ -741,6 +742,7 @@ _G.TargetAssistSwitchScoreRatio = tonumber(_G.TargetAssistSwitchScoreRatio) or 0
 _G.TargetAssistReacquireDelay = tonumber(_G.TargetAssistReacquireDelay) or 0.12
 
 local humanizedTime = 0
+local ArgusRuntime
 
 local TargetAssistFOV = Drawing.new("Circle")
 TargetAssistFOV.Visible = false
@@ -2845,7 +2847,7 @@ _G.ArgusStateWatchdog = true
 _G.ArgusConfigAutoRepair = true
 _G.ArgusDebugMonitor = false
 
-local ArgusRuntime = {
+ArgusRuntime = {
     FPS=60,
     FrameEMA=60,
     TargetCache=nil,
