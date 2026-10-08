@@ -398,6 +398,8 @@ end)
 
 
 -- Argus performance gate for the original ESP renderer.
+-- Forward declaration: the adaptive-rate implementation is defined later.
+local finalAdaptiveRate
 local ArgusESPNextUpdate = 0
 local function argusShouldUpdateESP()
     if not _G.ArgusESPPerformance then
@@ -2940,7 +2942,7 @@ targetAssistIsValid = function(player)
     return part and finalLOS(part) or false
 end
 
-local function finalAdaptiveRate()
+finalAdaptiveRate = function()
     if not _G.ArgusESPAdaptive then return _G.ArgusESPUpdateRate end
     local fps = ArgusRuntime.FPS or 60
     local maxRate = finalSafeNumber(_G.ArgusESPMaxUpdateRate,60,20,120)
