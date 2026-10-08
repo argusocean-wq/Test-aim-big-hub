@@ -1465,7 +1465,7 @@ if ThirdPersonState.Enabled then task.defer(function() applyThirdPerson(true) en
 
 -- ============================================================
 
-_G.ArgusUIEnabled = false
+_G.ArgusUIEnabled = true
 _G.ArgusUIKey = Enum.KeyCode.RightControl
 _G.ArgusDebugMode = false
 _G.TargetAssistMaxPredictionTime = tonumber(_G.TargetAssistMaxPredictionTime) or 0.35
@@ -1992,7 +1992,7 @@ local function argusPointInBox(point, box)
         and point.Y >= box.Position.Y and point.Y <= box.Position.Y+box.Size.Y
 end
 
-local ArgusInput = _G.ArgusUIEnabled and UserInputService.InputBegan:Connect(function(input, processed)
+local ArgusInput = UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     if _G.ArgusUIEnabled and input.KeyCode == _G.ArgusUIKey then
         ArgusUI.Open = not ArgusUI.Open
@@ -2032,17 +2032,14 @@ local ArgusInput = _G.ArgusUIEnabled and UserInputService.InputBegan:Connect(fun
     end
 end)
 
-if _G.ArgusUIEnabled then
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            ArgusUI.Dragging=false
-            ArgusUI.ActiveSlider=nil
-        end
-    end)
-end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        ArgusUI.Dragging=false
+        ArgusUI.ActiveSlider=nil
+    end
+end))
 
-if _G.ArgusUIEnabled then
-    UserInputService.InputChanged:Connect(function(input)
+UserInputService.InputChanged:Connect(function(input)
     if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
     local mouse=UserInputService:GetMouseLocation()
     if ArgusUI.Dragging then
@@ -2070,7 +2067,6 @@ if _G.ArgusUIEnabled then
         argusSetSlider(ArgusUI.ActiveSlider,mouse.X)
     end
     end)
-end
 
 local function argusUpdateTargetWeights()
     -- Selection weighting is exposed as a scoring configuration for future target modes.
@@ -2094,7 +2090,6 @@ local function argusUpdateTargetWeights()
     end
 end
 
-if _G.ArgusUIEnabled then
 RunService.RenderStepped:Connect(function()
     ArgusUI.FrameCount += 1
     local now=os.clock()
@@ -2199,26 +2194,10 @@ RunService.RenderStepped:Connect(function()
     if ArgusUI.Open then
         argusRenderSliders()
     end
-end)
 end
 
 ArgusUI.Open = false
-if _G.ArgusUIEnabled then
-    argusRebuildBody()
-else
-    -- The desktop Control Center is disabled by design; remove all fixed Drawing objects.
-    for _, obj in pairs(ArgusDraw) do
-        if type(obj) == "table" then
-            for _, item in pairs(obj) do
-                pcall(function() if item.Remove then item:Remove() end end)
-                pcall(function() if item.Destroy then item:Destroy() end end)
-            end
-        elseif obj then
-            pcall(function() if obj.Remove then obj:Remove() end end)
-            pcall(function() if obj.Destroy then obj:Destroy() end end)
-        end
-    end
-end
+argusRebuildBody()
 
 
 -- =========================================================
