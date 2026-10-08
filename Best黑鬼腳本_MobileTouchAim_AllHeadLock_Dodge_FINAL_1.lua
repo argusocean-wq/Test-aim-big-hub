@@ -2052,7 +2052,7 @@ UserInputService.InputEnded:Connect(function(input)
         ArgusUI.Dragging=false
         ArgusUI.ActiveSlider=nil
     end
-end))
+end)
 
 UserInputService.InputChanged:Connect(function(input)
     if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
