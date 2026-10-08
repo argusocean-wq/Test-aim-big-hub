@@ -2139,12 +2139,59 @@ RunService.RenderStepped:Connect(function(dt)
         elseif ArgusUI.Toast then
             ArgusUI.Toast=nil
         end
+
+        -- Body / control transition
+        local bodyAlpha=math.clamp(anim.Alpha,0,1)
+        local bodyOffset=(1-anim.Open)*10
+        for _,obj in ipairs(ArgusDraw.BodyTexts) do
+            obj.Transparency=bodyAlpha
+            obj.Position=Vector2.new(obj.Position.X,obj.Position.Y)
+            obj.Visible=bodyAlpha>0.01
+        end
+        for _,button in ipairs(ArgusDraw.Buttons) do
+            local mouse=UserInputService:GetMouseLocation()
+            local hover=argusPointInBox(mouse,button.Box)
+            local pressed=(ArgusUI.Anim.Pressed==button)
+            button.Box.Color=hover and Color3.fromRGB(42,42,42) or Color3.fromRGB(28,28,28)
+            button.Box.Transparency=pressed and 0.78 or bodyAlpha
+            button.Text.Transparency=bodyAlpha
+            button.Text.Position=Vector2.new(button.Box.Position.X+10,button.Box.Position.Y+(pressed and 7 or 6))
+            button.Box.Visible=bodyAlpha>0.01
+            button.Text.Visible=bodyAlpha>0.01
+        end
+        for _,slider in ipairs(ArgusDraw.Sliders) do
+            slider.Back.Transparency=bodyAlpha
+            slider.Fill.Transparency=bodyAlpha
+            slider.Text.Transparency=bodyAlpha
+        end
+
+        local toastAlpha=math.clamp(ArgusUI.Anim.Toast*bodyAlpha,0,1)
+        if ArgusUI.Toast and toastAlpha>0.01 then
+            local tx=mx+ArgusUI.W-190
+            local ty=my+54+ArgusUI.Anim.ToastY
+            ArgusDraw.ToastBox.Position=Vector2.new(tx,ty)
+            ArgusDraw.ToastBox.Size=Vector2.new(172,30)
+            ArgusDraw.ToastBox.Color=Color3.fromRGB(24,24,24)
+            ArgusDraw.ToastBox.Transparency=toastAlpha
+            ArgusDraw.ToastBox.Visible=true
+            ArgusDraw.ToastText.Text=tostring(ArgusUI.Toast)
+            ArgusDraw.ToastText.Position=Vector2.new(tx+10,ty+8)
+            ArgusDraw.ToastText.Color=_G.ArgusUIAccent
+            ArgusDraw.ToastText.Transparency=toastAlpha
+            ArgusDraw.ToastText.Visible=true
+        else
+            ArgusDraw.ToastBox.Visible=false
+            ArgusDraw.ToastText.Visible=false
+        end
     else
         ArgusDraw.Shadow.Visible=false
         ArgusDraw.Panel.Visible=false
         ArgusDraw.Header.Visible=false
         ArgusDraw.Accent.Visible=false
         ArgusDraw.TabLine.Visible=false
+        ArgusDraw.TabIndicator.Visible=false
+        ArgusDraw.ToastBox.Visible=false
+        ArgusDraw.ToastText.Visible=false
         ArgusDraw.Title.Visible=false
         ArgusDraw.Subtitle.Visible=false
         ArgusDraw.Status.Visible=false
