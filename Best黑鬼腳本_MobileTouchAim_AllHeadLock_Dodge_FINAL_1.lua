@@ -20,7 +20,16 @@ end
 -- Prevent duplicate runtime instances from stacking RenderStep/Input connections.
 -- The existing running instance remains authoritative.
 if _G.ArgusRuntimeLoaded then
-    return
+    -- A previous instance is already alive: ask it to reveal the existing UI
+    -- instead of stacking a second runtime.
+    if type(_G.ArgusShowUI) == "function" then
+        pcall(_G.ArgusShowUI)
+        return
+    end
+
+    -- Previous execution stopped before UI initialization completed.
+    -- Clear the stale guard so this load can recover normally.
+    _G.ArgusRuntimeLoaded = nil
 end
 
 local Players = game:GetService("Players")
@@ -1498,12 +1507,18 @@ local ArgusUI = {
     FPSClock = os.clock(),
 }
 
+local argusRebuildBody
 local ArgusProfiles = {}
 local ArgusKeybinds = {
     AimToggle = _G.TargetAssistToggleKey,
     UI = _G.ArgusUIKey,
     VisualHide = Enum.KeyCode.RightShift,
 }
+
+_G.ArgusShowUI = function()
+    ArgusUI.Open = true
+    pcall(argusRebuildBody)
+end
 
 local function argusNewSquare(filled, thickness)
     local x = Drawing.new("Square")
@@ -1800,7 +1815,7 @@ local function argusRenderSliders()
     end
 end
 
-local function argusRebuildBody()
+argusRebuildBody = function()
     argusDestroyControls()
 
     -- ImGui-inspired two-column layout: compact navigation rail + dense content inspector.
