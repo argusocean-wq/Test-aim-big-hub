@@ -26,6 +26,201 @@ end
 
 local ESPObjects = {}
 
+
+-- ============================================================
+-- ARGUS Native Roblox Drawing Backend
+-- 用 Roblox 原生 GUI 取代一般環境不存在的 executor Drawing API。
+-- ============================================================
+local function argusCreateNativeDrawingBackend()
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+    local oldGui = playerGui:FindFirstChild("ARGUS_DrawingOverlay")
+    if oldGui then
+        oldGui:Destroy()
+    end
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "ARGUS_DrawingOverlay"
+    gui.IgnoreGuiInset = true
+    gui.ResetOnSpawn = false
+    gui.DisplayOrder = 999998
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    gui.Parent = playerGui
+
+    local function clampTransparency(value)
+        return math.clamp(tonumber(value) or 1, 0, 1)
+    end
+
+    local function applyCommon(instance, props, kind)
+        local visible = props.Visible == true
+        instance.Visible = visible
+
+        local color = props.Color or Color3.new(1,1,1)
+        local transparency = clampTransparency(props.Transparency)
+
+        if kind == "Text" then
+            instance.TextColor3 = color
+            instance.TextTransparency = 1 - transparency
+            instance.TextStrokeTransparency = props.Outline and (1 - transparency) or 1
+            instance.TextStrokeColor3 = props.OutlineColor or Color3.new(0,0,0)
+            instance.TextSize = math.max(1, tonumber(props.Size) or 14)
+            instance.Font = Enum.Font.Gotham
+            instance.Text = tostring(props.Text or "")
+            instance.TextWrapped = false
+        else
+            instance.BackgroundColor3 = color
+            instance.BackgroundTransparency = props.Filled == false and 1 or (1 - transparency)
+        end
+    end
+
+    local function update(obj)
+        local p = obj._props
+        local instance = obj._instance
+        if not instance or not instance.Parent then return end
+
+        applyCommon(instance, p, obj._kind)
+
+        if obj._kind == "Square" then
+            local pos = p.Position or Vector2.zero
+            local size = p.Size or Vector2.zero
+            instance.AnchorPoint = Vector2.new(0,0)
+            instance.Position = UDim2.fromOffset(pos.X, pos.Y)
+            instance.Size = UDim2.fromOffset(math.max(0,size.X), math.max(0,size.Y))
+
+            local stroke = obj._stroke
+            if stroke then
+                stroke.Enabled = p.Filled ~= true and p.Visible == true
+                stroke.Thickness = math.max(1, tonumber(p.Thickness) or 1)
+                stroke.Color = p.Color or Color3.new(1,1,1)
+                stroke.Transparency = 1 - clampTransparency(p.Transparency)
+            end
+        elseif obj._kind == "Circle" then
+            local center = p.Position or p.Center or Vector2.zero
+            local radius = math.max(0, tonumber(p.Radius) or 0)
+            instance.AnchorPoint = Vector2.new(0.5,0.5)
+            instance.Position = UDim2.fromOffset(center.X, center.Y)
+            instance.Size = UDim2.fromOffset(radius * 2, radius * 2)
+
+            local stroke = obj._stroke
+            if stroke then
+                stroke.Enabled = p.Visible == true
+                stroke.Thickness = math.max(1, tonumber(p.Thickness) or 1)
+                stroke.Color = p.Color or Color3.new(1,1,1)
+                stroke.Transparency = 1 - clampTransparency(p.Transparency)
+            end
+        elseif obj._kind == "Line" then
+            local from = p.From or Vector2.zero
+            local to = p.To or from
+            local delta = to - from
+            local length = delta.Magnitude
+            instance.AnchorPoint = Vector2.new(0.5,0.5)
+            instance.Position = UDim2.fromOffset((from.X + to.X) * 0.5, (from.Y + to.Y) * 0.5)
+            instance.Size = UDim2.fromOffset(math.max(1, length), math.max(1, tonumber(p.Thickness) or 1))
+            instance.Rotation = math.deg(math.atan2(delta.Y, delta.X))
+            instance.BackgroundTransparency = 1 - clampTransparency(p.Transparency)
+        elseif obj._kind == "Text" then
+            local pos = p.Position or Vector2.zero
+            instance.AnchorPoint = p.Center and Vector2.new(0.5,0.5) or Vector2.new(0,0)
+            instance.Position = UDim2.fromOffset(pos.X, pos.Y)
+            instance.Size = UDim2.fromOffset(800, math.max(18, (tonumber(p.Size) or 14) + 8))
+        end
+    end
+
+    local function newDrawing(kind)
+        local instance
+        local stroke
+
+        if kind == "Text" then
+            instance = Instance.new("TextLabel")
+            instance.BackgroundTransparency = 1
+            instance.AutomaticSize = Enum.AutomaticSize.X
+            instance.Size = UDim2.fromOffset(800, 24)
+        else
+            instance = Instance.new("Frame")
+            instance.BorderSizePixel = 0
+            instance.Active = false
+            if kind == "Circle" then
+                local corner = Instance.new("UICorner")
+                corner.CornerRadius = UDim.new(1,0)
+                corner.Parent = instance
+            end
+            stroke = Instance.new("UIStroke")
+            stroke.Parent = instance
+        end
+
+        instance.Name = "ARGUS_DrawingObject"
+        instance.ZIndex = 1
+        instance.Parent = gui
+
+        local obj = {
+            _kind = kind,
+            _instance = instance,
+            _stroke = stroke,
+            _props = {
+                Visible = false,
+                Color = Color3.new(1,1,1),
+                Transparency = 1,
+                Thickness = 1,
+                Filled = false,
+                Position = Vector2.zero,
+                Size = Vector2.zero,
+                From = Vector2.zero,
+                To = Vector2.zero,
+                Radius = 0,
+                Center = false,
+                Outline = false,
+                OutlineColor = Color3.new(0,0,0),
+                Text = "",
+                Font = 2,
+            },
+        }
+
+        local proxy = setmetatable(obj, {
+            __index = function(self, key)
+                if key == "Remove" or key == "Destroy" then
+                    return function()
+                        if self._instance then
+                            self._instance:Destroy()
+                            self._instance = nil
+                        end
+                    end
+                end
+                return self._props[key]
+            end,
+            __newindex = function(self, key, value)
+                self._props[key] = value
+                update(self)
+            end,
+        })
+
+        update(proxy)
+        return proxy
+    end
+
+    return {
+        new = function(kind)
+            if kind ~= "Square" and kind ~= "Line" and kind ~= "Text" and kind ~= "Circle" then
+                error("ARGUS native Drawing backend 不支援類型: "..tostring(kind))
+            end
+            return newDrawing(kind)
+        end,
+        _Gui = gui,
+    }
+end
+
+local useNativeDrawing =
+    type(Drawing) ~= "table"
+    or type(Drawing.new) ~= "function"
+    or game:GetService("UserInputService").TouchEnabled
+
+if useNativeDrawing then
+    local backend = argusCreateNativeDrawingBackend()
+    Drawing = backend
+    _G.ArgusDrawingBackend = "RobloxScreenGui"
+else
+    _G.ArgusDrawingBackend = "ExecutorDrawing"
+end
+
+
 local BonesR15 = {
     {"Head","UpperTorso"},{"UpperTorso","LowerTorso"},
     {"UpperTorso","LeftUpperArm"},{"LeftUpperArm","LeftLowerArm"},{"LeftLowerArm","LeftHand"},
@@ -1035,7 +1230,7 @@ local function isMobileTouchMode()
 end
 
 local function isTouchOnMobileUI(position)
-    -- 不只檢查 CoreGui；PlayerGui 裡的遊戲 UI、按鈕、輸入框也必須優先吃掉觸控。
+    -- 只攔截真正可互動的遊戲 UI，避免 ESP/裝飾用透明 GuiObject 阻擋瞄準觸控。
     local ok, objects = pcall(function()
         return game:GetService("GuiService"):GetGuiObjectsAtPosition(position.X, position.Y)
     end)
@@ -1043,7 +1238,12 @@ local function isTouchOnMobileUI(position)
 
     for _, object in ipairs(objects) do
         if object and object:IsA("GuiObject") and object.Visible then
-            return true
+            if object.Active
+                or object:IsA("GuiButton")
+                or object:IsA("TextBox")
+                or object:IsA("ScrollingFrame") then
+                return true
+            end
         end
     end
     return false
@@ -1053,7 +1253,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     -- 手機：按住遊戲畫面即可進入 Target Assist。
     -- 不需要 Q / Aim 按鈕；控制面板觸控不會觸發鎖定。
     if input.UserInputType == Enum.UserInputType.Touch and isMobileTouchMode() then
-        if not gameProcessed and not isTouchOnMobileUI(input.Position) and isMobileAimTouchAllowed(input.Position) then
+        if not isTouchOnMobileUI(input.Position) and isMobileAimTouchAllowed(input.Position) then
             MobileTouchState.Touches[input] = true
             MobileTouchState.Active = true
             _G.ArgusMobileAimActive = true
@@ -2111,11 +2311,7 @@ local ArgusMobile = {
 }
 
 local function argusGetUIParent()
-    local ok, hui = pcall(function()
-        if gethui then return gethui() end
-    end)
-    if ok and hui then return hui end
-    return game:GetService("CoreGui")
+    return LocalPlayer:WaitForChild("PlayerGui")
 end
 
 local function mobileClear(parent)
@@ -2443,6 +2639,7 @@ local function argusCreateMobileUI()
     end)
     gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
     gui.DisplayOrder=999999
+    gui.ResetOnSpawn=false
     gui.Parent=argusGetUIParent()
     ArgusMobile.Gui=gui
 
