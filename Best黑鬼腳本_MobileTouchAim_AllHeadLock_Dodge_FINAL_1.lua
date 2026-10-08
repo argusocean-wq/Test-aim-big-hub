@@ -17,6 +17,13 @@ if not RunService:IsClient() then
     return
 end
 
+-- Prevent duplicate runtime instances from stacking RenderStep/Input connections.
+-- The existing running instance remains authoritative.
+if _G.ArgusRuntimeLoaded then
+    return
+end
+_G.ArgusRuntimeLoaded = true
+
 local Players = game:GetService("Players")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
@@ -233,8 +240,12 @@ local BonesR6 = {
     {"Torso","Left Leg"},{"Torso","Right Leg"},
 }
 
-local function isSameTeam(player)
-    if not _G.TeamCheck then return false end
+local function isSameTeam(player, scope)
+    local enabled = scope == "Target"
+        and _G.TargetAssistTeamCheck
+        or _G.TeamCheck
+
+    if not enabled then return false end
     if not LocalPlayer.Team or not player.Team then return false end
     return LocalPlayer.Team == player.Team
 end
@@ -420,6 +431,9 @@ end
 
 -- RenderStepped
 RunService.RenderStepped:Connect(function()
+    if _G.TargetAssistVisualsHidden and not (_G.ESPEnabled and _G.SkeletonESP) then
+        return
+    end
     if not argusShouldUpdateESP() then
         return
     end
@@ -758,7 +772,15 @@ end
 
 local function getPredictedPosition(targetPart)
     local position = targetPart.Position
-    local velocity = targetPart.AssemblyLinearVelocity
+    local rawVelocity = targetPart.AssemblyLinearVelocity
+    local velocity = rawVelocity
+
+    -- Smooth target velocity to reduce prediction noise from animation/network jitter.
+    local previousVelocity = ArgusRuntime.TargetVelocity[targetPart]
+    if previousVelocity then
+        velocity = previousVelocity:Lerp(rawVelocity, 0.35)
+    end
+    ArgusRuntime.TargetVelocity[targetPart] = velocity
 
     if not _G.TargetAssistPredictionEnabled then
         return position + _G.TargetAssistOffset
@@ -769,17 +791,31 @@ local function getPredictedPosition(targetPart)
         tonumber(_G.TargetAssistPredictionTime) or 0
     )
 
-    -- 移動預測
-    if _G.TargetAssistMovementPrediction then
-        position += velocity * predictionTime
-    end
-
-    -- 子彈速度預測：使用目前相機到目標的距離 / projectile speed
+    local projectileTime = 0
     local projectileSpeed = tonumber(_G.TargetAssistProjectileSpeed) or 0
     if projectileSpeed > 0 then
         local distance = (Camera.CFrame.Position - targetPart.Position).Magnitude
-        local projectileTime = distance / projectileSpeed
-        position += velocity * projectileTime
+        projectileTime = distance / projectileSpeed
+    end
+
+    -- Avoid double-leading when both movement and projectile prediction are enabled.
+    -- Use the stronger estimate, then clamp it to prevent extreme over-leading.
+    local leadTime = 0
+    if _G.TargetAssistMovementPrediction then
+        leadTime = math.max(leadTime, predictionTime)
+    end
+    if projectileSpeed > 0 then
+        leadTime = math.max(leadTime, projectileTime)
+    end
+
+    local maxPrediction = math.clamp(
+        tonumber(_G.TargetAssistMaxPredictionTime) or 0.35,
+        0,
+        1.5
+    )
+    leadTime = math.min(leadTime, maxPrediction)
+    if leadTime > 0 then
+        position += velocity * leadTime
     end
 
     return position + _G.TargetAssistOffset
@@ -847,7 +883,7 @@ local function targetAssistIsValid(player)
         return false
     end
 
-    if _G.TargetAssistTeamCheck and isSameTeam(player) then
+    if isSameTeam(player, "Target") then
         return false
     end
 
@@ -946,15 +982,22 @@ local function getTargetScore(player, screenCenter, localRoot)
     end
 
     local mode = _G.ArgusTargetSelectionMode or "Crosshair"
+    local crosshairWeight = math.max(0, tonumber(_G.ArgusWeightCrosshair) or 1.0)
+    local distanceWeight = math.max(0, tonumber(_G.ArgusWeightDistance) or 0.15)
+    local healthWeight = math.max(0, tonumber(_G.ArgusWeightHealth) or 0.0)
+
     local score
     if mode == "Distance" then
         score = distanceNorm
     elseif mode == "Health" then
         score = healthNorm
     elseif mode == "Balanced" then
-        score = (screenNorm * 1.0) + (distanceNorm * 0.35) + (healthNorm * 0.15)
+        score = (screenNorm * crosshairWeight)
+            + (distanceNorm * distanceWeight)
+            + (healthNorm * healthWeight)
     else
-        score = screenNorm
+        -- Crosshair remains the default and therefore keeps the original feel.
+        score = screenNorm * crosshairWeight
     end
 
     return score, screenDistance, worldDistance
@@ -1017,7 +1060,7 @@ local function getBestTarget()
     local fovRadius = math.max(1, tonumber(_G.TargetAssistFOVRadius) or 180)
 
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and not (_G.TargetAssistTeamCheck and isSameTeam(player)) then
+        if player ~= LocalPlayer and not isSameTeam(player, "Target") then
             local character = player.Character
             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
             local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -1095,6 +1138,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if input.UserInputType == Enum.UserInputType.Touch and isMobileTouchMode() then
         if not isTouchOnMobileUI(input.Position) and isMobileAimTouchAllowed(input.Position) then
             MobileTouchState.Touches[input] = true
+            _G.ArgusTouchStartedAt = _G.ArgusTouchStartedAt or {}
+            _G.ArgusTouchStartedAt[input] = os.clock()
             MobileTouchState.Active = true
             _G.ArgusMobileAimActive = true
         end
@@ -1118,6 +1163,9 @@ UserInputService.InputEnded:Connect(function(input)
     if not isMobileTouchMode() then return end
 
     MobileTouchState.Touches[input] = nil
+    if _G.ArgusTouchStartedAt then
+        _G.ArgusTouchStartedAt[input] = nil
+    end
     MobileTouchState.Active = next(MobileTouchState.Touches) ~= nil
     _G.ArgusMobileAimActive = MobileTouchState.Active
 end)
@@ -1275,8 +1323,9 @@ local function updateTargetAssist(dt)
     -- 手機專用強度：Aimbot 開啟即為強鎖，滑桿只調整跟隨力度。
     if isMobileTouchMode() then
         local strength = math.clamp(tonumber(_G.MobileAimStrength) or 100, 0, 100) / 100
-        -- 0% 保留極低跟隨，100% 接近直接鎖定。
-        local mobileSmooth = 0.35 + strength * 35
+        -- Non-linear response: low values stay controllable, high values become noticeably stronger.
+        local strengthCurve = strength ^ 1.25
+        local mobileSmooth = 1.5 + strengthCurve * 48
         smoothness = math.max(smoothness, mobileSmooth)
     end
 
@@ -1356,7 +1405,17 @@ local function updateTargetAssist(dt)
     predictedPosition += getHumanizedOffset(dt)
     local targetCFrame = CFrame.lookAt(cameraPosition, predictedPosition)
     local alpha = 1 - math.exp(-smoothness * math.max(dt, 0))
-    Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, math.clamp(alpha, 0, 1))
+
+    -- Deadzone prevents tiny one-pixel corrections from producing visible micro-jitter.
+    local currentLook = Camera.CFrame.LookVector
+    local desiredLook = targetCFrame.LookVector
+    local dot = math.clamp(currentLook:Dot(desiredLook), -1, 1)
+    local angularError = math.deg(math.acos(dot))
+    local deadzone = math.max(0, tonumber(_G.TargetAssistDeadzone) or 0.12)
+
+    if angularError > deadzone then
+        Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, math.clamp(alpha, 0, 1))
+    end
 end
 
 RunService:BindToRenderStep(
@@ -1407,6 +1466,8 @@ if ThirdPersonState.Enabled then task.defer(function() applyThirdPerson(true) en
 _G.ArgusUIEnabled = false
 _G.ArgusUIKey = Enum.KeyCode.RightControl
 _G.ArgusDebugMode = false
+_G.TargetAssistMaxPredictionTime = tonumber(_G.TargetAssistMaxPredictionTime) or 0.35
+_G.TargetAssistDeadzone = tonumber(_G.TargetAssistDeadzone) or 0.12
 _G.ArgusESPPerformance = true
 _G.ArgusESPUpdateRate = 60
 _G.ArgusTargetSelectionMode = "Crosshair"
@@ -1929,7 +1990,7 @@ local function argusPointInBox(point, box)
         and point.Y >= box.Position.Y and point.Y <= box.Position.Y+box.Size.Y
 end
 
-local ArgusInput = UserInputService.InputBegan:Connect(function(input, processed)
+local ArgusInput = _G.ArgusUIEnabled and UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     if _G.ArgusUIEnabled and input.KeyCode == _G.ArgusUIKey then
         ArgusUI.Open = not ArgusUI.Open
@@ -1969,14 +2030,17 @@ local ArgusInput = UserInputService.InputBegan:Connect(function(input, processed
     end
 end)
 
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        ArgusUI.Dragging=false
-        ArgusUI.ActiveSlider=nil
-    end
+if _G.ArgusUIEnabled then
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            ArgusUI.Dragging=false
+            ArgusUI.ActiveSlider=nil
+        end
+    end)
 end)
 
-UserInputService.InputChanged:Connect(function(input)
+if _G.ArgusUIEnabled then
+    UserInputService.InputChanged:Connect(function(input)
     if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
     local mouse=UserInputService:GetMouseLocation()
     if ArgusUI.Dragging then
@@ -2003,7 +2067,8 @@ UserInputService.InputChanged:Connect(function(input)
     elseif ArgusUI.ActiveSlider then
         argusSetSlider(ArgusUI.ActiveSlider,mouse.X)
     end
-end)
+    end)
+end
 
 local function argusUpdateTargetWeights()
     -- Selection weighting is exposed as a scoring configuration for future target modes.
@@ -2027,6 +2092,7 @@ local function argusUpdateTargetWeights()
     end
 end
 
+if _G.ArgusUIEnabled then
 RunService.RenderStepped:Connect(function()
     ArgusUI.FrameCount += 1
     local now=os.clock()
@@ -2132,9 +2198,25 @@ RunService.RenderStepped:Connect(function()
         argusRenderSliders()
     end
 end)
+end
 
 ArgusUI.Open = false
-argusRebuildBody()
+if _G.ArgusUIEnabled then
+    argusRebuildBody()
+else
+    -- The desktop Control Center is disabled by design; remove all fixed Drawing objects.
+    for _, obj in pairs(ArgusDraw) do
+        if type(obj) == "table" then
+            for _, item in pairs(obj) do
+                pcall(function() if item.Remove then item:Remove() end end)
+                pcall(function() if item.Destroy then item:Destroy() end end)
+            end
+        elseif obj then
+            pcall(function() if obj.Remove then obj:Remove() end end)
+            pcall(function() if obj.Destroy then obj:Destroy() end end)
+        end
+    end
+end
 
 
 -- =========================================================
@@ -2417,6 +2499,8 @@ function argusMobileRebuild()
         mobileNumber(ArgusMobile.Content,"FOV Radius","TargetAssistFOVRadius",20,600,5)
         mobileNumber(ArgusMobile.Content,"Max Distance","TargetAssistMaxDistance",0,2000,10)
         mobileNumber(ArgusMobile.Content,"Prediction Time","TargetAssistPredictionTime",0,0.5,0.01)
+        mobileNumber(ArgusMobile.Content,"Max Prediction","TargetAssistMaxPredictionTime",0,1.5,0.01)
+        mobileNumber(ArgusMobile.Content,"Aim Deadzone","TargetAssistDeadzone",0,2,0.05)
         mobileNumber(ArgusMobile.Content,"Projectile Speed","TargetAssistProjectileSpeed",0,10000,50)
         mobileNumber(ArgusMobile.Content,"Secondary Delay / 二次定位延遲","TargetAssistSecondaryDelay",0,0.5,0.01)
         mobileNumber(ArgusMobile.Content,"Secondary Blend / 二次定位過渡","TargetAssistSecondaryBlendTime",0.01,0.5,0.01)
@@ -2766,6 +2850,7 @@ local ArgusRuntime = {
     FrameEMA=60,
     TargetCache=nil,
     TargetCacheAt=0,
+    TargetVelocity={},
     LastCamera=Camera,
     LastCharacter=nil,
     Connections={},
@@ -2791,6 +2876,8 @@ local function argusValidateConfig()
     _G.TargetAssistTargetSwitchDelay=argusSafeNumber(_G.TargetAssistTargetSwitchDelay,0.15,0,2)
     _G.TargetAssistMinimumLockTime=argusSafeNumber(_G.TargetAssistMinimumLockTime,0.12,0,3)
     _G.TargetAssistReacquireDelay=argusSafeNumber(_G.TargetAssistReacquireDelay,0.12,0,2)
+    _G.TargetAssistMaxPredictionTime=argusSafeNumber(_G.TargetAssistMaxPredictionTime,0.35,0,1.5)
+    _G.TargetAssistDeadzone=argusSafeNumber(_G.TargetAssistDeadzone,0.12,0,2)
 end
 argusValidateConfig()
 
@@ -2848,8 +2935,12 @@ local function argusCachedBestTarget()
     local lifetime=argusSafeNumber(_G.ArgusTargetCacheLifetime,0.08,0.02,0.3)
     if ArgusRuntime.TargetCache and now-ArgusRuntime.TargetCacheAt<=lifetime then
         local player=ArgusRuntime.TargetCache
-        if player and player.Parent==Players and targetAssistIsValid(player) then
-            return player
+        if player and player.Parent==Players then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health > 0 and targetAssistIsValid(player) then
+                return player
+            end
         end
     end
     local player=getBestTarget()
@@ -2888,6 +2979,13 @@ Players.PlayerAdded:Connect(function()
     ArgusRuntime.TargetCache=nil
 end)
 Players.PlayerRemoving:Connect(function(player)
+    if player.Character then
+        for part in pairs(ArgusRuntime.TargetVelocity) do
+            if part and part:IsDescendantOf(player.Character) then
+                ArgusRuntime.TargetVelocity[part] = nil
+            end
+        end
+    end
     if ArgusRuntime.TargetCache==player then
         ArgusRuntime.TargetCache=nil
         if TargetAssist.CurrentTarget==player then
@@ -2953,6 +3051,8 @@ local function finalInvalidateTarget()
     ArgusFinal.TargetAt = 0
     ArgusRuntime.TargetCache = nil
     ArgusRuntime.TargetCacheAt = 0
+    ArgusRuntime.TargetVelocity = {}
+    ArgusFinal.LOS = {}
 end
 
 -- Short LOS cache: enough to reduce repeated raycasts while still reacting quickly to walls.
@@ -2974,9 +3074,14 @@ local _originalTargetAssistIsValid = targetAssistIsValid
 targetAssistIsValid = function(player)
     local wallCheck = _G.TargetAssistWallCheck
     _G.TargetAssistWallCheck = false
-    local valid = _originalTargetAssistIsValid(player)
+
+    local ok, valid = pcall(_originalTargetAssistIsValid, player)
+
     _G.TargetAssistWallCheck = wallCheck
-    if not valid then return false end
+
+    if not ok or not valid then
+        return false
+    end
 
     local character = player and player.Character
     local part = character and getTargetPart(character)
@@ -2995,8 +3100,31 @@ finalAdaptiveRate = function()
 end
 
 local function finalTouchCleanup()
-    for input in pairs(ArgusFinal.TouchStarted) do
-        if input == nil then ArgusFinal.TouchStarted[input] = nil end
+    local activeCount = 0
+    local now = os.clock()
+    local startedMap = _G.ArgusTouchStartedAt or {}
+
+    for input, startedAt in pairs(startedMap) do
+        ArgusFinal.TouchStarted[input] = startedAt
+    end
+
+    for input, startedAt in pairs(ArgusFinal.TouchStarted) do
+        local alive = input
+            and input.UserInputState ~= Enum.UserInputState.End
+            and input.UserInputState ~= Enum.UserInputState.Cancel
+
+        if not alive or (startedAt and now - startedAt > 10) then
+            ArgusFinal.TouchStarted[input] = nil
+            startedMap[input] = nil
+        else
+            activeCount += 1
+        end
+    end
+
+    if activeCount == 0 and MobileTouchState.Active then
+        MobileTouchState.Active = false
+        MobileTouchState.Touches = {}
+        _G.ArgusMobileAimActive = false
     end
 end
 
@@ -3072,6 +3200,9 @@ RunService:BindToRenderStep('NexusArgusFinalGuard',Enum.RenderPriority.First.Val
         searchInterval = math.max(searchInterval, 0.08)
     elseif fps < 45 then
         searchInterval = math.max(searchInterval, 0.05)
+    end
+    if isMobileTouchMode() then
+        searchInterval = math.max(searchInterval, 0.028)
     end
 
     if now - ArgusFinal.LastSearch >= searchInterval then
@@ -3179,7 +3310,7 @@ local function argusCheckESPHealth()
 end
 
 local function argusCheckTargetAssistHealth()
-    if not _G.TargetAssistEnabled then
+    if not _G.TargetAssistEnabled or _G.ArgusFailSafe == false then
         ArgusModuleHealth.TargetAssist = "Disabled"
         ArgusModuleHealth.HeadLock = "Disabled"
         return
