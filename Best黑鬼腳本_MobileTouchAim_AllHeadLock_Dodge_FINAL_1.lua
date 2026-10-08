@@ -1422,8 +1422,8 @@ local ArgusUI = {
     Tab = "Dashboard",
     X = 70,
     Y = 90,
-    W = 480,
-    H = 560,
+    W = 620,
+    H = 600,
     Dragging = false,
     DragOffset = Vector2.zero,
     ActiveSlider = nil,
@@ -1469,6 +1469,9 @@ local ArgusDraw = {
     Header = argusNewSquare(true),
     Accent = argusNewSquare(true),
     TabLine = argusNewSquare(true),
+    Sidebar = argusNewSquare(true),
+    ContentPanel = argusNewSquare(true),
+    TopMeta = argusNewText(10),
     Title = argusNewText(18),
     Subtitle = argusNewText(11),
     TabTexts = {},
@@ -1737,9 +1740,10 @@ end
 local function argusRebuildBody()
     argusDestroyControls()
 
-    local x = ArgusUI.X + 22
+    -- ImGui-inspired two-column layout: compact navigation rail + dense content inspector.
+    local x = ArgusUI.X + 168
     local y = ArgusUI.Y + 91
-    local w = ArgusUI.W - 44
+    local w = ArgusUI.W - 190
 
     if ArgusUI.Tab == "Dashboard" then
         local status, target = argusGetTargetStatus()
@@ -1940,9 +1944,10 @@ local ArgusInput = UserInputService.InputBegan:Connect(function(input, processed
             ArgusUI.DragOffset=mouse-Vector2.new(ArgusUI.X,ArgusUI.Y)
             return
         end
-        for _,tab in ipairs(ArgusTabs) do
+        for i,tab in ipairs(ArgusTabs) do
             local t=ArgusDraw.TabTexts[tab]
-            if t and mouse.X >= t.Position.X-4 and mouse.X <= t.Position.X+92 and mouse.Y >= t.Position.Y-4 and mouse.Y <= t.Position.Y+22 then
+            local tabY=ArgusUI.Y+70+(i-1)*36
+            if t and mouse.X >= ArgusUI.X+8 and mouse.X <= ArgusUI.X+146 and mouse.Y >= tabY-8 and mouse.Y <= tabY+25 then
                 ArgusUI.Tab=tab
                 argusRebuildBody()
                 return
@@ -2050,30 +2055,44 @@ RunService.RenderStepped:Connect(function()
         ArgusDraw.Header.Color=Color3.fromRGB(18,18,18)
         ArgusDraw.Header.Visible=true
 
-        ArgusDraw.Accent.Position=Vector2.new(mx,my+46)
-        ArgusDraw.Accent.Size=Vector2.new(ArgusUI.W,2)
+        ArgusDraw.Accent.Position=Vector2.new(mx+2,my+70+(table.find(ArgusTabs,ArgusUI.Tab)-1)*36)
+        ArgusDraw.Accent.Size=Vector2.new(3,30)
         ArgusDraw.Accent.Color=_G.ArgusUIAccent
         ArgusDraw.Accent.Visible=true
 
-        ArgusDraw.TabLine.Position=Vector2.new(mx,my+70)
-        ArgusDraw.TabLine.Size=Vector2.new(ArgusUI.W,1)
+        ArgusDraw.TabLine.Position=Vector2.new(mx+150,my+48)
+        ArgusDraw.TabLine.Size=Vector2.new(ArgusUI.W-150,1)
         ArgusDraw.TabLine.Color=Color3.fromRGB(45,45,45)
         ArgusDraw.TabLine.Visible=true
 
-        ArgusDraw.Title.Text="ARGUS"
+        ArgusDraw.Sidebar.Position=Vector2.new(mx,my+48)
+        ArgusDraw.Sidebar.Size=Vector2.new(150,ArgusUI.H-48)
+        ArgusDraw.Sidebar.Color=Color3.fromRGB(9,9,9)
+        ArgusDraw.Sidebar.Visible=true
+
+        ArgusDraw.ContentPanel.Position=Vector2.new(mx+150,my+49)
+        ArgusDraw.ContentPanel.Size=Vector2.new(ArgusUI.W-150,ArgusUI.H-49)
+        ArgusDraw.ContentPanel.Color=Color3.fromRGB(13,13,13)
+        ArgusDraw.ContentPanel.Visible=true
+
+        ArgusDraw.Title.Text="NEXUS"
         ArgusDraw.Title.Position=Vector2.new(mx+18,my+9)
         ArgusDraw.Title.Visible=true
         ArgusDraw.Title.Color=_G.ArgusUIAccent
-        ArgusDraw.Subtitle.Text="CONTROL CENTER"
-        ArgusDraw.Subtitle.Position=Vector2.new(mx+82,my+13)
+        ArgusDraw.Subtitle.Text="AI CONTROL CENTER"
+        ArgusDraw.Subtitle.Position=Vector2.new(mx+86,my+13)
         ArgusDraw.Subtitle.Visible=true
+        ArgusDraw.TopMeta.Text=string.format("FPS %.0f  |  %s  |  %s",ArgusUI.FPS,tostring(_G.ArgusDeviceType or "Desktop"),tostring(_G.ArgusDrawingBackend or "Unknown"))
+        ArgusDraw.TopMeta.Position=Vector2.new(mx+ArgusUI.W-250,my+15)
+        ArgusDraw.TopMeta.Color=Color3.fromRGB(165,165,165)
+        ArgusDraw.TopMeta.Visible=true
 
-        local tabWidth=ArgusUI.W/#ArgusTabs
+        local tabHeight=36
         for i,tab in ipairs(ArgusTabs) do
             local t=ArgusDraw.TabTexts[tab]
-            t.Text=tab
-            t.Position=Vector2.new(mx+(i-1)*tabWidth+8,my+54)
-            t.Color=(ArgusUI.Tab==tab) and _G.ArgusUIAccent or Color3.fromRGB(155,155,155)
+            t.Text=string.upper(tab)
+            t.Position=Vector2.new(mx+18,my+70+(i-1)*tabHeight)
+            t.Color=(ArgusUI.Tab==tab) and _G.ArgusUIAccent or Color3.fromRGB(145,145,145)
             t.Visible=true
         end
 
@@ -2082,8 +2101,8 @@ RunService.RenderStepped:Connect(function()
         ArgusDraw.Status.Color=argusStatusColor(argusGetTargetStatus())
         ArgusDraw.Status.Visible=true
 
-        ArgusDraw.Footer.Text="RightControl: UI  |  RightShift: Visual Hide"
-        ArgusDraw.Footer.Position=Vector2.new(mx+ArgusUI.W-225,my+ArgusUI.H-32)
+        ArgusDraw.Footer.Text="RCTRL UI   |   RSHIFT Visual Hide"
+        ArgusDraw.Footer.Position=Vector2.new(mx+ArgusUI.W-215,my+ArgusUI.H-32)
         ArgusDraw.Footer.Visible=true
 
         if ArgusUI.Toast and os.clock()<ArgusUI.ToastUntil then
@@ -2098,8 +2117,11 @@ RunService.RenderStepped:Connect(function()
         ArgusDraw.Header.Visible=false
         ArgusDraw.Accent.Visible=false
         ArgusDraw.TabLine.Visible=false
+        ArgusDraw.Sidebar.Visible=false
+        ArgusDraw.ContentPanel.Visible=false
         ArgusDraw.Title.Visible=false
         ArgusDraw.Subtitle.Visible=false
+        ArgusDraw.TopMeta.Visible=false
         ArgusDraw.Status.Visible=false
         ArgusDraw.Footer.Visible=false
         for _,t in pairs(ArgusDraw.TabTexts) do t.Visible=false end
@@ -2564,38 +2586,48 @@ local function argusCreateMobileUI()
     padding.Parent=title
 
     local tabs=Instance.new("ScrollingFrame")
-    tabs.BackgroundColor3=Color3.fromRGB(12,12,12)
+    tabs.Name="Navigation"
+    tabs.BackgroundColor3=Color3.fromRGB(9,9,9)
     tabs.BorderSizePixel=0
     tabs.Position=UDim2.fromOffset(0,46)
-    tabs.Size=UDim2.new(1,0,0,42)
+    tabs.Size=UDim2.fromOffset(112,0)
+    tabs.Size=UDim2.new(0,112,1,-46)
     tabs.ScrollBarThickness=2
-    tabs.ScrollingDirection=Enum.ScrollingDirection.X
-    tabs.AutomaticCanvasSize=Enum.AutomaticSize.X
+    tabs.ScrollingDirection=Enum.ScrollingDirection.Y
+    tabs.AutomaticCanvasSize=Enum.AutomaticSize.Y
     tabs.CanvasSize=UDim2.new()
     tabs.Parent=frame
 
     local tabLayout=Instance.new("UIListLayout")
-    tabLayout.FillDirection=Enum.FillDirection.Horizontal
-    tabLayout.Padding=UDim.new(0,4)
+    tabLayout.FillDirection=Enum.FillDirection.Vertical
+    tabLayout.Padding=UDim.new(0,3)
     tabLayout.Parent=tabs
+
+    local tabPadding=Instance.new("UIPadding")
+    tabPadding.PaddingTop=UDim.new(0,12)
+    tabPadding.PaddingLeft=UDim.new(0,8)
+    tabPadding.PaddingRight=UDim.new(0,8)
+    tabPadding.Parent=tabs
 
     local tabNames={"Dashboard","Visuals","Target","Settings","Profiles","Keybinds","Debug"}
     for _,name in ipairs(tabNames) do
         local b=Instance.new("TextButton")
-        b.Size=UDim2.fromOffset(92,38)
-        b.BackgroundColor3=Color3.fromRGB(22,22,22)
-        b.BorderColor3=Color3.fromRGB(70,70,70)
-        b.TextColor3=Color3.fromRGB(230,230,230)
+        b.Size=UDim2.new(1,0,0,38)
+        b.BackgroundColor3=Color3.fromRGB(16,16,16)
+        b.BorderSizePixel=0
+        b.TextColor3=Color3.fromRGB(175,175,175)
         b.Font=Enum.Font.GothamSemibold
         b.TextSize=11
-        b.Text=name
+        b.TextXAlignment=Enum.TextXAlignment.Left
+        b.Text="  "..string.upper(name)
         b.Parent=tabs
         b.Activated:Connect(function()
             ArgusMobile.Tab=name
             argusMobileRebuild()
             for _,other in ipairs(tabs:GetChildren()) do
                 if other:IsA("TextButton") then
-                    other.BackgroundColor3=(other==b) and Color3.fromRGB(50,50,50) or Color3.fromRGB(22,22,22)
+                    other.BackgroundColor3=(other==b) and Color3.fromRGB(38,38,38) or Color3.fromRGB(16,16,16)
+                    other.TextColor3=(other==b) and Color3.fromRGB(255,255,255) or Color3.fromRGB(175,175,175)
                 end
             end
         end)
@@ -2603,9 +2635,9 @@ local function argusCreateMobileUI()
 
     local scroll=Instance.new("ScrollingFrame")
     scroll.Name="Content"
-    scroll.Position=UDim2.fromOffset(10,94)
-    scroll.Size=UDim2.new(1,-20,1,-104)
-    scroll.BackgroundColor3=Color3.fromRGB(10,10,10)
+    scroll.Position=UDim2.fromOffset(122,56)
+    scroll.Size=UDim2.new(1,-132,1,-66)
+    scroll.BackgroundColor3=Color3.fromRGB(13,13,13)
     scroll.BorderColor3=Color3.fromRGB(45,45,45)
     scroll.ScrollBarThickness=5
     scroll.AutomaticCanvasSize=Enum.AutomaticSize.Y
