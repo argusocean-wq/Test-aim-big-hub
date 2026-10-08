@@ -12,7 +12,7 @@ _G.TeamCheck    = true
 _G.TeamColorESP = true
 
 local RunService = game:GetService("RunService")
--- Client-only guard: ESP / Aim / Head Lock / Dodge / UI / health monitor all run locally.
+-- Client-only guard: ESP / Aim / Head Lock / UI / health monitor all run locally.
 if not RunService:IsClient() then
     return
 end
@@ -1049,178 +1049,6 @@ local function isMobileAimTouchAllowed(position)
     local minX = math.clamp(tonumber(_G.ArgusMobileAimTouchMinX) or 0.45,0,0.9)
     return position.X >= viewport.X * minX
 end
-
--- ============================================================
--- Auto Dodge（遊戲內測試/自有遊戲用）
--- 受到實際傷害時才觸發；只做小幅、短時間的非規則移動。
--- 不發送武器/傷害/遠端事件，不修改其他玩家。
--- ============================================================
-_G.AutoDodgeEnabled = false
-_G.AutoDodgeStrength = 35
-_G.AutoDodgeDuration = 0.12
-_G.AutoDodgeCooldown = 0.28
-_G.AutoDodgeJump = true
-_G.AutoDodgeJumpChance = 0.18
-_G.AutoDodgeSlide = true
-_G.AutoDodgeSlideChance = 0.22
-_G.AutoDodgeMaxHorizontalSpeed = 18
-_G.AutoDodgeMode = "Smart" -- Smart / Random / Directional / Defensive
-_G.AutoDodgeThreatScale = 1
-_G.AutoDodgeSafeCheck = true
-_G.AutoDodgeAvoidRepeat = true
-_G.AutoDodgeRecovery = 0.10
-_G.AutoDodgeDebug = false
-_G.AutoDodgeAdaptive = true
-_G.AutoDodgeThreatProvider = nil -- optional own-game callback: function(character, humanoid, damage) -> Vector3? 
-_G.AutoDodgeSlideCallback = _G.AutoDodgeSlideCallback
-
-local AutoDodge = {
-    LastHealth=nil, LastTrigger=0, ActiveUntil=0, RecoveryUntil=0,
-    Direction=Vector3.zero, Humanoid=nil, Character=nil,
-    HealthConnection=nil, LastDirection=Vector3.zero, RecentDirections={},
-    State="Idle", Threat=0, SourceDirection=Vector3.zero,
-    LastAction="None", LastDamage=0, FPS=60,
-}
-
-local function autoDodgeResetState()
-    AutoDodge.ActiveUntil=0; AutoDodge.RecoveryUntil=0
-    AutoDodge.Direction=Vector3.zero; AutoDodge.State="Idle"
-    AutoDodge.Threat=0; AutoDodge.SourceDirection=Vector3.zero
-    AutoDodge.LastAction="None"; AutoDodge.LastDamage=0
-end
-
-local function autoDodgeCanUse(character, humanoid)
-    if not _G.AutoDodgeEnabled or not character or not humanoid or humanoid.Health<=0 then return false end
-    if os.clock()-AutoDodge.LastTrigger < math.max(0.1,tonumber(_G.AutoDodgeCooldown) or 0.28) then return false end
-    return true
-end
-
-local function autoDodgeHasJump(humanoid)
-    if not humanoid then return false end
-    return humanoid:GetStateEnabled(Enum.HumanoidStateType.Jumping) and humanoid.UseJumpPower ~= nil and humanoid.JumpPower > 0
-end
-
-local function autoDodgeHasSlide(character)
-    if type(_G.AutoDodgeSlideCallback)=="function" then return true end
-    return character and (character:GetAttribute("CanSlide") == true or character:GetAttribute("SlidingEnabled") == true) or false
-end
-
-local function autoDodgeTrySlide(character, humanoid)
-    if not _G.AutoDodgeSlide or not autoDodgeHasSlide(character) then return false end
-    if math.random() > math.clamp(tonumber(_G.AutoDodgeSlideChance) or 0.22,0,1) then return false end
-    if type(_G.AutoDodgeSlideCallback)=="function" then
-        local ok=pcall(_G.AutoDodgeSlideCallback,character,humanoid)
-        if ok then AutoDodge.LastAction="Slide"; return true end
-    end
-    return false
-end
-
-local function autoDodgeSafeDirection(character, root, direction)
-    if not _G.AutoDodgeSafeCheck then return direction end
-    local params=RaycastParams.new(); params.FilterType=Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances={character}; params.IgnoreWater=true
-    local distance=math.clamp(2.5+(tonumber(_G.AutoDodgeStrength) or 35)/35,2.5,5.5)
-    local hit=workspace:Raycast(root.Position+Vector3.new(0,0.5,0),direction*distance,params)
-    if not hit then return direction end
-    local right=Vector3.new(-direction.Z,0,direction.X)
-    if right.Magnitude>0.01 then right=right.Unit end
-    local alt=workspace:Raycast(root.Position+Vector3.new(0,0.5,0),right*distance,params)
-    if not alt then return right end
-    return -right
-end
-
-local function autoDodgeChooseDirection(character, root, camera, sourceDirection)
-    local forward=camera and Vector3.new(camera.CFrame.LookVector.X,0,camera.CFrame.LookVector.Z) or Vector3.new(0,0,-1)
-    local right=camera and Vector3.new(camera.CFrame.RightVector.X,0,camera.CFrame.RightVector.Z) or Vector3.new(1,0,0)
-    if forward.Magnitude<0.01 then forward=Vector3.new(0,0,-1) end
-    if right.Magnitude<0.01 then right=Vector3.new(1,0,0) end
-    forward=forward.Unit; right=right.Unit
-    local candidates={right,-right,forward,-forward}
-    if sourceDirection.Magnitude>0.1 then
-        local away=-sourceDirection.Unit
-        table.insert(candidates,1,away)
-    end
-    local best,bestScore=nil,-math.huge
-    for _,dir in ipairs(candidates) do
-        local d=Vector3.new(dir.X,0,dir.Z)
-        if d.Magnitude>0.01 then
-            d=d.Unit
-            local safe=d
-            if _G.AutoDodgeSafeCheck then safe=autoDodgeSafeDirection(character,root,d) end
-            local score=0
-            if _G.AutoDodgeMode=="Directional" and sourceDirection.Magnitude>0.1 then score=score+safe:Dot(-sourceDirection.Unit)*4 end
-            if _G.AutoDodgeMode=="Defensive" then score=score+safe:Dot(-forward)*0.5 end
-            if _G.AutoDodgeAvoidRepeat and AutoDodge.LastDirection.Magnitude>0.1 then score=score-safe:Dot(AutoDodge.LastDirection)*2 end
-            score=score+math.random()*0.35
-            if score>bestScore then bestScore=score; best=safe end
-        end
-    end
-    return best or right
-end
-
-local function autoDodgeGetThreatDirection(character, humanoid, damage)
-    if type(_G.AutoDodgeThreatProvider)=="function" then
-        local ok,result=pcall(_G.AutoDodgeThreatProvider,character,humanoid,damage)
-        if ok and typeof(result)=="Vector3" and result.Magnitude>0.05 then return Vector3.new(result.X,0,result.Z) end
-    end
-    return Vector3.zero
-end
-
-local function autoDodgeTrigger(character, humanoid, damage)
-    if not autoDodgeCanUse(character,humanoid) then return end
-    local root=character:FindFirstChild("HumanoidRootPart"); if not root then return end
-    AutoDodge.State="ThreatAnalysis"
-    AutoDodge.LastDamage=damage or 0
-    local threat=math.clamp((tonumber(damage) or 0)/25,0,1)*math.clamp(tonumber(_G.AutoDodgeThreatScale) or 1,0.5,2)
-    AutoDodge.Threat=math.clamp(threat,0,1)
-    local source=autoDodgeGetThreatDirection(character,humanoid,damage)
-    AutoDodge.SourceDirection=source
-    local direction=autoDodgeChooseDirection(character,root,workspace.CurrentCamera,source)
-    local strength=math.clamp(tonumber(_G.AutoDodgeStrength) or 35,0,100)/100
-    local adaptive=_G.AutoDodgeAdaptive and math.clamp(AutoDodge.FPS/60,0.65,1) or 1
-    local speed=math.clamp((7+strength*11)*(0.85+AutoDodge.Threat*0.25)*adaptive,6,tonumber(_G.AutoDodgeMaxHorizontalSpeed) or 18)
-    AutoDodge.LastTrigger=os.clock(); AutoDodge.ActiveUntil=AutoDodge.LastTrigger+math.clamp(tonumber(_G.AutoDodgeDuration) or 0.12,0.05,0.22)
-    AutoDodge.RecoveryUntil=AutoDodge.ActiveUntil+(tonumber(_G.AutoDodgeRecovery) or 0.10)
-    AutoDodge.Direction=direction; AutoDodge.LastDirection=direction; AutoDodge.Humanoid=humanoid; AutoDodge.Character=character
-    AutoDodge.State="Dodging"
-    humanoid:Move(direction*speed,false)
-    local jumped=false
-    if _G.AutoDodgeJump and autoDodgeHasJump(humanoid) and math.random()<math.clamp(tonumber(_G.AutoDodgeJumpChance) or 0.18,0,1)*(0.5+AutoDodge.Threat*0.5) then humanoid.Jump=true; jumped=true end
-    if not jumped then autoDodgeTrySlide(character,humanoid) end
-    if jumped then AutoDodge.LastAction="Jump" elseif AutoDodge.LastAction~="Slide" then AutoDodge.LastAction="Strafe" end
-end
-
-local function autoDodgeBindCharacter(character)
-    if AutoDodge.HealthConnection then AutoDodge.HealthConnection:Disconnect(); AutoDodge.HealthConnection=nil end
-    autoDodgeResetState(); AutoDodge.Character=character; AutoDodge.Humanoid=character and character:FindFirstChildOfClass("Humanoid")
-    AutoDodge.LastHealth=AutoDodge.Humanoid and AutoDodge.Humanoid.Health or nil
-    if not AutoDodge.Humanoid then return end
-    AutoDodge.HealthConnection=AutoDodge.Humanoid.HealthChanged:Connect(function(newHealth)
-        local oldHealth=AutoDodge.LastHealth; AutoDodge.LastHealth=newHealth
-        if oldHealth and newHealth<oldHealth then autoDodgeTrigger(character,AutoDodge.Humanoid,oldHealth-newHealth) end
-    end)
-end
-
-if LocalPlayer.Character then autoDodgeBindCharacter(LocalPlayer.Character) end
-LocalPlayer.CharacterAdded:Connect(autoDodgeBindCharacter)
-RunService:BindToRenderStep("NexusStudioAutoDodge",Enum.RenderPriority.Character.Value+1,function()
-    local frameNow=os.clock()
-    local frameDelta=frameNow-AutoDodge.LastFrame
-    AutoDodge.LastFrame=frameNow
-    if frameDelta>0 then AutoDodge.FPS=math.clamp(1/frameDelta,1,240) end
-    if not _G.AutoDodgeEnabled then AutoDodge.State="Idle"; return end
-    local now=os.clock(); local humanoid=AutoDodge.Humanoid
-    if not humanoid or humanoid.Health<=0 then AutoDodge.State="Idle"; return end
-    if now<AutoDodge.ActiveUntil then
-        local strength=math.clamp(tonumber(_G.AutoDodgeStrength) or 35,0,100)/100
-        local speed=math.clamp((7+strength*11)*(_G.AutoDodgeAdaptive and math.clamp(AutoDodge.FPS/60,0.65,1) or 1),6,tonumber(_G.AutoDodgeMaxHorizontalSpeed) or 18)
-        humanoid:Move(AutoDodge.Direction*speed,false)
-    elseif now<AutoDodge.RecoveryUntil then
-        AutoDodge.State="Recovery"
-    else
-        AutoDodge.State="Cooldown"
-    end
-end)
 
 local function isMobileTouchMode()
     local deviceType = _G.ArgusDeviceType or "Desktop"
@@ -2508,21 +2336,21 @@ function argusMobileRebuild()
     elseif ArgusMobile.Tab == "Target" then
         mobileLabel(ArgusMobile.Content, "TARGET ASSIST", 14, 30)
         mobileToggle(ArgusMobile.Content,"Aimbot","TargetAssistEnabled")
-        mobileToggle(ArgusMobile.Content,"Auto Dodge / 自動閃避","AutoDodgeEnabled")
-        mobileNumber(ArgusMobile.Content,"Dodge Strength / 閃避強度","AutoDodgeStrength",0,100,5)
-        mobileNumber(ArgusMobile.Content,"Dodge Duration / 閃避時間","AutoDodgeDuration",0.05,0.22,0.01)
-        mobileNumber(ArgusMobile.Content,"Dodge Cooldown / 閃避冷卻","AutoDodgeCooldown",0.1,1,0.01)
-        mobileToggle(ArgusMobile.Content,"Dodge Jump / 受傷跳躍","AutoDodgeJump")
-        mobileToggle(ArgusMobile.Content,"Dodge Slide Hook / 滑鏟 Hook","AutoDodgeSlide")
-        mobileNumber(ArgusMobile.Content,"Dodge Jump Chance / 跳躍機率","AutoDodgeJumpChance",0,1,0.05)
-        mobileNumber(ArgusMobile.Content,"Dodge Slide Chance / 滑鏟機率","AutoDodgeSlideChance",0,1,0.05)
-        mobileNumber(ArgusMobile.Content,"Dodge Max Speed / 最大閃避速度","AutoDodgeMaxHorizontalSpeed",8,18,1)
-        mobileCycle(ArgusMobile.Content,"Dodge Mode / 閃避模式","AutoDodgeMode",{"Smart","Random","Directional","Defensive"})
-        mobileNumber(ArgusMobile.Content,"Threat Scale / 威脅倍率","AutoDodgeThreatScale",0.5,2,0.1)
-        mobileToggle(ArgusMobile.Content,"Safe Position Check / 安全位置","AutoDodgeSafeCheck")
-        mobileToggle(ArgusMobile.Content,"Avoid Repeat / 避免重複","AutoDodgeAvoidRepeat")
-        mobileNumber(ArgusMobile.Content,"Recovery / 恢復時間","AutoDodgeRecovery",0,0.5,0.01)
-        mobileToggle(ArgusMobile.Content,"Adaptive Performance / 自適應效能","AutoDodgeAdaptive")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         mobileNumber(ArgusMobile.Content,"Aim Strength / 鎖定強度","MobileAimStrength",0,100,5)
         mobileNumber(ArgusMobile.Content,"Head Lock Strength / 鎖頭強度","MobileHeadLockStrength",0,100,5)
         mobileNumber(ArgusMobile.Content,"Head Threshold / 鎖頭門檻","MobileHeadLockThreshold",0,100,5)
@@ -2893,11 +2721,6 @@ local function argusValidateConfig()
     _G.TargetAssistTargetSwitchDelay=argusSafeNumber(_G.TargetAssistTargetSwitchDelay,0.15,0,2)
     _G.TargetAssistMinimumLockTime=argusSafeNumber(_G.TargetAssistMinimumLockTime,0.12,0,3)
     _G.TargetAssistReacquireDelay=argusSafeNumber(_G.TargetAssistReacquireDelay,0.12,0,2)
-    _G.AutoDodgeStrength=argusSafeNumber(_G.AutoDodgeStrength,35,0,100)
-    _G.AutoDodgeDuration=argusSafeNumber(_G.AutoDodgeDuration,0.12,0.03,0.4)
-    _G.AutoDodgeCooldown=argusSafeNumber(_G.AutoDodgeCooldown,0.28,0.05,3)
-    _G.AutoDodgeMaxHorizontalSpeed=argusSafeNumber(_G.AutoDodgeMaxHorizontalSpeed,18,1,40)
-    _G.AutoDodgeRecovery=argusSafeNumber(_G.AutoDodgeRecovery,0.10,0,1)
 end
 argusValidateConfig()
 
@@ -2932,7 +2755,6 @@ local function argusUpdateFPS(dt)
         local instant=1/dt
         ArgusRuntime.FrameEMA=ArgusRuntime.FrameEMA*0.92+instant*0.08
         ArgusRuntime.FPS=math.clamp(ArgusRuntime.FrameEMA,1,240)
-        AutoDodge.FPS=ArgusRuntime.FPS
     end
 end
 
@@ -2971,11 +2793,6 @@ local function argusWatchdog()
     if TargetAssist.CurrentTarget and not targetAssistIsValid(TargetAssist.CurrentTarget) then
         TargetAssist.CurrentTarget=nil
         resetMobileHeadState()
-    end
-    if AutoDodge.Humanoid and AutoDodge.Humanoid.Parent==nil then
-        autoDodgeResetState()
-        AutoDodge.Humanoid=nil
-        AutoDodge.Character=nil
     end
 end
 
@@ -3175,7 +2992,6 @@ RunService:BindToRenderStep('NexusArgusFinalGuard',Enum.RenderPriority.First.Val
         _G.ArgusESPEffectiveRate = finalAdaptiveRate()
         _G.ArgusTargetState = TargetAssist.State
         _G.ArgusHeadState = TargetAssist.HeadState
-        _G.ArgusDodgeState = AutoDodge.State
     end
 end)
 
