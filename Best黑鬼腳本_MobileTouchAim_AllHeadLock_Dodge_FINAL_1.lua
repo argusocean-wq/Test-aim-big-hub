@@ -2573,7 +2573,7 @@ local function argusCreateMobileUI()
     title.BackgroundColor3=Color3.fromRGB(18,18,18)
     title.BorderSizePixel=0
     title.Size=UDim2.new(1,0,0,46)
-    title.Text="ARGUS  /  "..tostring(_G.ArgusDeviceType)
+    title.Text="NEXUS AI  /  "..tostring(_G.ArgusDeviceType)
     title.TextColor3=Color3.fromRGB(255,255,255)
     title.TextSize=16
     title.Font=Enum.Font.GothamBold
@@ -2631,6 +2631,15 @@ local function argusCreateMobileUI()
                 end
             end
         end)
+    end
+
+    -- Initial active state mirrors the selected navigation item.
+    for _,other in ipairs(tabs:GetChildren()) do
+        if other:IsA("TextButton") then
+            local active = other.Text:find(string.upper(ArgusMobile.Tab), 1, true) ~= nil
+            other.BackgroundColor3 = active and Color3.fromRGB(38,38,38) or Color3.fromRGB(16,16,16)
+            other.TextColor3 = active and Color3.fromRGB(255,255,255) or Color3.fromRGB(175,175,175)
+        end
     end
 
     local scroll=Instance.new("ScrollingFrame")
