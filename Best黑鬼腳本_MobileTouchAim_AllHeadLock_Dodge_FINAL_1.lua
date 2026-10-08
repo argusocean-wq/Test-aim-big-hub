@@ -1433,6 +1433,7 @@ local ArgusUI = {
     FPS = 0,
     FrameCount = 0,
     FPSClock = os.clock(),
+    Anim = {Open=1,TargetOpen=1,Alpha=1,Tab=0,TargetTab=0,Toast=0,ToastY=10,Pressed=nil},
 }
 
 local ArgusProfiles = {}
@@ -1469,6 +1470,7 @@ local ArgusDraw = {
     Header = argusNewSquare(true),
     Accent = argusNewSquare(true),
     TabLine = argusNewSquare(true),
+    TabIndicator = argusNewSquare(true),
     Title = argusNewText(18),
     Subtitle = argusNewText(11),
     TabTexts = {},
@@ -1477,6 +1479,8 @@ local ArgusDraw = {
     Sliders = {},
     Status = argusNewText(12),
     Footer = argusNewText(10),
+    ToastBox = argusNewSquare(true),
+    ToastText = argusNewText(11),
 }
 
 local ArgusTabs = {"Dashboard", "Visuals", "Target", "Settings", "Profiles", "Keybinds", "Debug"}
@@ -1544,11 +1548,31 @@ end
 local function argusToast(message)
     ArgusUI.Toast = tostring(message)
     ArgusUI.ToastUntil = os.clock() + 2.2
+    ArgusUI.Anim.Toast=0
+    ArgusUI.Anim.ToastY=10
 end
 
 local function argusBoolText(value)
     return value and "ON" or "OFF"
 end
+
+local function argusUIAnim(dt)
+    local a=ArgusUI.Anim
+    a.Open=a.Open+(a.TargetOpen-a.Open)*math.clamp(dt*14,0,1)
+    a.Alpha=a.Alpha+(a.Open-a.Alpha)*math.clamp(dt*16,0,1)
+    local idx=1
+    for i,tab in ipairs(ArgusTabs) do if tab==ArgusUI.Tab then idx=i break end end
+    a.TargetTab=(idx-1)/math.max(1,#ArgusTabs-1)
+    a.Tab=a.Tab+(a.TargetTab-a.Tab)*math.clamp(dt*14,0,1)
+    if ArgusUI.Toast and os.clock()<ArgusUI.ToastUntil then
+        a.Toast=a.Toast+(1-a.Toast)*math.clamp(dt*18,0,1)
+        a.ToastY=a.ToastY+(0-a.ToastY)*math.clamp(dt*16,0,1)
+    else
+        a.Toast=a.Toast+(0-a.Toast)*math.clamp(dt*12,0,1)
+        a.ToastY=a.ToastY+(10-a.ToastY)*math.clamp(dt*12,0,1)
+    end
+end
+
 
 local function argusStatusColor(status)
     if status == "Locked" or status == "Secondary Lock" then
@@ -1929,7 +1953,8 @@ local ArgusInput = UserInputService.InputBegan:Connect(function(input, processed
     if processed then return end
     if input.KeyCode == _G.ArgusUIKey then
         ArgusUI.Open = not ArgusUI.Open
-        argusRebuildBody()
+        ArgusUI.Anim.TargetOpen = ArgusUI.Open and 1 or 0
+        if ArgusUI.Open then argusRebuildBody() end
         return
     end
 
@@ -1957,6 +1982,7 @@ local ArgusInput = UserInputService.InputBegan:Connect(function(input, processed
         end
         for _,button in ipairs(ArgusDraw.Buttons) do
             if argusPointInBox(mouse,button.Box) then
+                ArgusUI.Anim.Pressed=button
                 button.Callback()
                 return
             end
@@ -1968,6 +1994,7 @@ UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         ArgusUI.Dragging=false
         ArgusUI.ActiveSlider=nil
+        ArgusUI.Anim.Pressed=nil
     end
 end)
 
@@ -2022,8 +2049,10 @@ local function argusUpdateTargetWeights()
     end
 end
 
-RunService.RenderStepped:Connect(function()
+RunService.RenderStepped:Connect(function(dt)
     ArgusUI.FrameCount += 1
+    dt=math.clamp(tonumber(dt) or 1/60,0,0.1)
+    argusUIAnim(dt)
     local now=os.clock()
     if now-ArgusUI.FPSClock >= 0.5 then
         ArgusUI.FPS=ArgusUI.FrameCount/(now-ArgusUI.FPSClock)
@@ -2035,56 +2064,74 @@ RunService.RenderStepped:Connect(function()
 
     if ArgusUI.Open then
         local mx,my=ArgusUI.X,ArgusUI.Y
-        ArgusDraw.Shadow.Position=Vector2.new(mx+4,my+5)
+        local anim=ArgusUI.Anim
+        local alpha=math.clamp(anim.Alpha,0,1)
+        local slide=(1-anim.Open)*18
+        ArgusDraw.Shadow.Position=Vector2.new(mx+4+slide,my+5+slide)
         ArgusDraw.Shadow.Size=Vector2.new(ArgusUI.W,ArgusUI.H)
         ArgusDraw.Shadow.Color=Color3.fromRGB(0,0,0)
-        ArgusDraw.Shadow.Visible=true
+        ArgusDraw.Shadow.Transparency=0.72*alpha
+        ArgusDraw.Shadow.Visible=alpha>0.01
 
-        ArgusDraw.Panel.Position=Vector2.new(mx,my)
+        ArgusDraw.Panel.Position=Vector2.new(mx+slide,my+slide)
         ArgusDraw.Panel.Size=Vector2.new(ArgusUI.W,ArgusUI.H)
         ArgusDraw.Panel.Color=Color3.fromRGB(12,12,12)
-        ArgusDraw.Panel.Visible=true
+        ArgusDraw.Panel.Transparency=alpha
+        ArgusDraw.Panel.Visible=alpha>0.01
 
-        ArgusDraw.Header.Position=Vector2.new(mx,my)
+        ArgusDraw.Header.Position=Vector2.new(mx+slide,my+slide)
         ArgusDraw.Header.Size=Vector2.new(ArgusUI.W,48)
         ArgusDraw.Header.Color=Color3.fromRGB(18,18,18)
-        ArgusDraw.Header.Visible=true
+        ArgusDraw.Header.Transparency=alpha
+        ArgusDraw.Header.Visible=alpha>0.01
 
         ArgusDraw.Accent.Position=Vector2.new(mx,my+46)
         ArgusDraw.Accent.Size=Vector2.new(ArgusUI.W,2)
         ArgusDraw.Accent.Color=_G.ArgusUIAccent
         ArgusDraw.Accent.Visible=true
 
-        ArgusDraw.TabLine.Position=Vector2.new(mx,my+70)
+        ArgusDraw.TabLine.Position=Vector2.new(mx+slide,my+70+slide)
         ArgusDraw.TabLine.Size=Vector2.new(ArgusUI.W,1)
         ArgusDraw.TabLine.Color=Color3.fromRGB(45,45,45)
-        ArgusDraw.TabLine.Visible=true
+        ArgusDraw.TabLine.Transparency=alpha
+        ArgusDraw.TabLine.Visible=alpha>0.01
+        local indicatorWidth=ArgusUI.W/#ArgusTabs
+        ArgusDraw.TabIndicator.Position=Vector2.new(mx+anim.Tab*(#ArgusTabs-1)*indicatorWidth+slide,my+69+slide)
+        ArgusDraw.TabIndicator.Size=Vector2.new(indicatorWidth,2)
+        ArgusDraw.TabIndicator.Color=_G.ArgusUIAccent
+        ArgusDraw.TabIndicator.Transparency=alpha
+        ArgusDraw.TabIndicator.Visible=alpha>0.01
 
         ArgusDraw.Title.Text="ARGUS"
-        ArgusDraw.Title.Position=Vector2.new(mx+18,my+9)
-        ArgusDraw.Title.Visible=true
+        ArgusDraw.Title.Position=Vector2.new(mx+18+slide,my+9+slide)
+        ArgusDraw.Title.Transparency=alpha
+        ArgusDraw.Title.Visible=alpha>0.01
         ArgusDraw.Title.Color=_G.ArgusUIAccent
         ArgusDraw.Subtitle.Text="CONTROL CENTER"
-        ArgusDraw.Subtitle.Position=Vector2.new(mx+82,my+13)
-        ArgusDraw.Subtitle.Visible=true
+        ArgusDraw.Subtitle.Position=Vector2.new(mx+82+slide,my+13+slide)
+        ArgusDraw.Subtitle.Transparency=alpha
+        ArgusDraw.Subtitle.Visible=alpha>0.01
 
         local tabWidth=ArgusUI.W/#ArgusTabs
         for i,tab in ipairs(ArgusTabs) do
             local t=ArgusDraw.TabTexts[tab]
             t.Text=tab
-            t.Position=Vector2.new(mx+(i-1)*tabWidth+8,my+54)
+            t.Position=Vector2.new(mx+(i-1)*tabWidth+8+slide,my+54+slide)
             t.Color=(ArgusUI.Tab==tab) and _G.ArgusUIAccent or Color3.fromRGB(155,155,155)
-            t.Visible=true
+            t.Transparency=alpha
+            t.Visible=alpha>0.01
         end
 
         ArgusDraw.Status.Text="STATUS: "..argusGetTargetStatus()
-        ArgusDraw.Status.Position=Vector2.new(mx+18,my+ArgusUI.H-32)
+        ArgusDraw.Status.Position=Vector2.new(mx+18+slide,my+ArgusUI.H-32+slide)
         ArgusDraw.Status.Color=argusStatusColor(argusGetTargetStatus())
-        ArgusDraw.Status.Visible=true
+        ArgusDraw.Status.Transparency=alpha
+        ArgusDraw.Status.Visible=alpha>0.01
 
         ArgusDraw.Footer.Text="RightControl: UI  |  RightShift: Visual Hide"
-        ArgusDraw.Footer.Position=Vector2.new(mx+ArgusUI.W-225,my+ArgusUI.H-32)
-        ArgusDraw.Footer.Visible=true
+        ArgusDraw.Footer.Position=Vector2.new(mx+ArgusUI.W-225+slide,my+ArgusUI.H-32+slide)
+        ArgusDraw.Footer.Transparency=alpha
+        ArgusDraw.Footer.Visible=alpha>0.01
 
         if ArgusUI.Toast and os.clock()<ArgusUI.ToastUntil then
             ArgusDraw.Status.Text=ArgusUI.Toast
