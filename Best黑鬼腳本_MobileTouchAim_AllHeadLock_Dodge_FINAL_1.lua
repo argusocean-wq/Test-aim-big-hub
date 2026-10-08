@@ -536,7 +536,7 @@ end
                         esp.Skeleton[i].From = Vector2.new(v1.X,v1.Y)
                         esp.Skeleton[i].To   = Vector2.new(v2.X,v2.Y)
                         esp.Skeleton[i].Visible = true
-                        esp.Skeleton[i].Color = Color3.fromRGB(170, 0, 255)
+                        esp.Skeleton[i].Color = Color3.fromRGB(0, 255, 0)
                     else
                         esp.Skeleton[i].Visible = false
                     end
@@ -1404,7 +1404,7 @@ if ThirdPersonState.Enabled then task.defer(function() applyThirdPerson(true) en
 
 -- ============================================================
 
-_G.ArgusUIEnabled = true
+_G.ArgusUIEnabled = false
 _G.ArgusUIKey = Enum.KeyCode.RightControl
 _G.ArgusDebugMode = false
 _G.ArgusESPPerformance = true
@@ -1931,7 +1931,7 @@ end
 
 local ArgusInput = UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
-    if input.KeyCode == _G.ArgusUIKey then
+    if _G.ArgusUIEnabled and input.KeyCode == _G.ArgusUIKey then
         ArgusUI.Open = not ArgusUI.Open
         argusRebuildBody()
         return
@@ -2133,8 +2133,8 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+ArgusUI.Open = false
 argusRebuildBody()
-argusToast("Argus Control Center ready")
 
 
 -- =========================================================
