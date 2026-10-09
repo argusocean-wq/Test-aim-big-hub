@@ -22,6 +22,18 @@ File: `desktop_runtime_helpers.lua`
 - This helper intentionally does not steer the camera, snap aim, or automatically lock onto other players. It is a reusable utility module and is not automatically injected into the main script; integration points must be wired and tested explicitly.
 - No executor API configuration or external loader behavior is changed by this module.
 
+## Desktop diagnostics module
+
+File: `desktop_diagnostics.lua`
+
+- Read-only target telemetry: nearest living opponents within 1000 studs, same-team exclusion where teams are assigned, up to three entries, distance, and raycast visibility.
+- Input telemetry: desktop capability, right-mouse state, feature-enabled flag, and whether the configured activation gate is satisfied.
+- Performance telemetry: FPS and approximate frame time.
+- External API instrumentation: `Diagnostics.RecordExternalCall(name, callback, ...)` records call duration and failures, reports failures with `warn`, and returns status/error details to the caller.
+- `Diagnostics.CreatePanel(parent, localPlayer)` creates a compact diagnostics card inside an existing GUI container; it does not create a second top-level window. The caller must attach it to the existing Debug panel and call `StartPerformanceSampling()` once if FPS sampling is desired.
+- The module does not control the camera, perform automatic aim locking, or retry failed API calls.
+- Integration is explicit; the module is not automatically injected into the monolithic script because the repository's external runtime/module-loading contract has not been verified.
+
 ## Custom DOT cycle
 
 Each of the ten passes uses the following cycle:
@@ -50,7 +62,7 @@ Each of the ten passes uses the following cycle:
 - Repository: `argusocean-wq/Test-aim-big-hub`.
 - Desktop-only/right-click panel change is tracked in PR #3.
 - External loader remains separate from the primary Lua source; `loading.lua` is a reference implementation only.
-- GitHub write/read-back validation for the desktop helper and this document: PASS.
+- GitHub write/read-back validation for desktop helper, diagnostics module, and this document: PASS.
 - Static marker review: PASS; this is not a substitute for a Luau parser.
 - Full Luau syntax parser and Roblox runtime test: NOT RUN.
 
@@ -68,4 +80,13 @@ Each of the ten passes uses the following cycle:
 - Added `desktop_runtime_helpers.lua` with desktop/input checks, teammate filtering, nearest-opponent census, distance filtering, raycast visibility, visibility dwell tracking, and panel clamping.
 - The helper is deliberately modular and is not automatically required by the monolithic script; this avoids silently changing execution behavior or assuming a loader/module API.
 - GitHub read-back: PASS.
+- Luau parser and target-environment runtime tests: NOT RUN.
+
+
+## Desktop diagnostics addition (2026-10-09)
+
+- Added `desktop_diagnostics.lua` with nearby-opponent telemetry, same-team filtering, distance and visibility display data, right-mouse activation-gate status, FPS/frame-time sampling, and external API call timing/error instrumentation.
+- Added a compact card builder that can be mounted under an existing GUI container; it does not create another top-level panel.
+- GitHub read-back: PASS.
+- Integration into the monolithic UI: NOT DONE; external module loading/injection is not assumed.
 - Luau parser and target-environment runtime tests: NOT RUN.
