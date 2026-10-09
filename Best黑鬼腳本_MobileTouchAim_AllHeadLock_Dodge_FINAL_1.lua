@@ -1347,44 +1347,9 @@ local function isAimActive()
         return false
     end
 
-    -- Zoom-in detection is the first activation signal; existing input modes remain fallbacks.
-    if isCameraADSActive() then
-        return true
-    end
-
-    if _G.TargetAssistAutoSingleVisible == true then
-        local _, visibleCount = getAutoSingleVisibleTarget()
-        return visibleCount == 1
-    end
-
-    local deviceType = _G.ArgusDeviceType or "Desktop"
-    local source = _G.ArgusInputSource or "Auto"
-
-    -- 手機：只使用「按住遊戲畫面」作為啟動條件，不依賴 Aim/Q 按鍵。
-    -- Hybrid 在觸控輸入時也使用相同規則；電腦滑鼠鍵盤邏輯保持原樣。
-    if source == "Touch" or (source == "Auto" and deviceType == "Mobile") then
-        return MobileTouchState.Active == true
-    end
-
-    if source == "Auto" and deviceType == "Hybrid" and MobileTouchState.Active then
-        return true
-    end
-
-    if source == "MouseKeyboard" and deviceType == "Mobile" then
-        return false
-    end
-
-    local rightMouse = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
-    local toggle = TargetAssist.ToggleState
-    local mode = _G.TargetAssistActivationMode
-
-    if mode == "Toggle" then
-        return toggle
-    elseif mode == "Both" then
-        return rightMouse or toggle
-    end
-
-    return rightMouse
+    -- Desktop-only: aim assistance is active only while the right mouse button is held.
+    -- Camera zoom/ADS and single-visible-target detection must never activate it by themselves.
+    return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
 end
 
 local function updateTargetAssist(dt)
@@ -1656,9 +1621,9 @@ _G.ArgusUIAccent = Color3.fromRGB(110, 220, 140)
 local ArgusUI = {
     Open = false,
     Tab = "Dashboard",
-    X = 70,
-    Y = 90,
-    W = 480,
+    X = 60,
+    Y = 60,
+    W = 520,
     H = 560,
     Dragging = false,
     DragOffset = Vector2.zero,
@@ -2298,6 +2263,13 @@ RunService.RenderStepped:Connect(function(dt)
 
     argusUpdateTargetWeights()
 
+    -- Keep the desktop panel reachable after display-size changes or dragging.
+    local viewport = (workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize) or Vector2.new(1280, 720)
+    local maxX = math.max(8, viewport.X - ArgusUI.W - 8)
+    local maxY = math.max(8, viewport.Y - ArgusUI.H - 8)
+    ArgusUI.X = math.clamp(ArgusUI.X, 8, maxX)
+    ArgusUI.Y = math.clamp(ArgusUI.Y, 8, maxY)
+
     if ArgusUI.Open then
         local mx,my=ArgusUI.X,ArgusUI.Y
         local anim=ArgusUI.Anim
@@ -2458,26 +2430,21 @@ argusToast("Argus Control Center ready")
 
 
 -- =========================================================
--- ARGUS DEVICE DETECTION / FULL MOBILE UI
+-- ARGUS DESKTOP-ONLY INPUT / UI
 -- =========================================================
+-- This build intentionally supports desktop mouse + keyboard only.
+-- Keep mobile UI disabled even on touch-capable hybrid devices.
 local ArgusDevice = {
     IsTouch = UserInputService.TouchEnabled,
     HasKeyboard = UserInputService.KeyboardEnabled,
     HasMouse = UserInputService.MouseEnabled,
 }
 
-if ArgusDevice.IsTouch and not ArgusDevice.HasKeyboard then
-    _G.ArgusDeviceType = "Mobile"
-elseif ArgusDevice.IsTouch and ArgusDevice.HasKeyboard then
-    _G.ArgusDeviceType = "Hybrid"
-else
-    _G.ArgusDeviceType = "Desktop"
-end
-
-_G.ArgusMobileUIEnabled = (_G.ArgusDeviceType ~= "Desktop")
+_G.ArgusDeviceType = "Desktop"
+_G.ArgusMobileUIEnabled = false
 _G.ArgusMobileAimActive = false
-_G.ArgusInputSource = "Auto" -- Auto / Touch / MouseKeyboard
-_G.ArgusDeviceVersion = "Dual"
+_G.ArgusInputSource = "MouseKeyboard"
+_G.ArgusDeviceVersion = "Desktop"
 
 local ArgusMobile = {
     Gui = nil,
