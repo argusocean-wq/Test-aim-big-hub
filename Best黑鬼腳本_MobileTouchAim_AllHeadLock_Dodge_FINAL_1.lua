@@ -2884,10 +2884,37 @@ local function argusCreateMobileUI()
         end
     end
 
-    local camera = workspace.CurrentCamera
-    if camera then
-        camera:GetPropertyChangedSignal("ViewportSize"):Connect(argusApplyResponsiveSize)
+    -- Keep responsive sizing attached to the active camera, including camera replacement.
+    -- Disconnect the previous camera's viewport listener to avoid stale connections.
+    local viewportConnection
+    local cameraChangedConnection
+    local function bindViewportCamera(camera)
+        if viewportConnection then
+            viewportConnection:Disconnect()
+            viewportConnection = nil
+        end
+        if camera then
+            viewportConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(argusApplyResponsiveSize)
+        end
+        argusApplyResponsiveSize()
     end
+
+    bindViewportCamera(workspace.CurrentCamera)
+    cameraChangedConnection = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+        bindViewportCamera(workspace.CurrentCamera)
+    end)
+
+    -- If this GUI is destroyed during a script reload, release the camera listeners too.
+    gui.Destroying:Connect(function()
+        if viewportConnection then
+            viewportConnection:Disconnect()
+            viewportConnection = nil
+        end
+        if cameraChangedConnection then
+            cameraChangedConnection:Disconnect()
+            cameraChangedConnection = nil
+        end
+    end)
     task.defer(argusApplyResponsiveSize)
 
     local sizeConstraint=Instance.new("UISizeConstraint")
