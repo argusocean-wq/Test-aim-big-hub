@@ -104,5 +104,5 @@ These are audit targets, not confirmed defects. Each requires a focused code ins
 - Added `loading.lua` as a hardened reference implementation for the external Raw loader: bounded download retries, minimum source-length check, protected compilation/execution, overlapping-call guard, and explicit error reporting.
 - The loader points to the existing `main` Raw entrypoint. It does not modify executor API settings or the main gameplay source.
 - Important: the existing external loader is not embedded in the main Lua file. This repository file is a reference implementation and does not update a separately hosted loader unless the owner copies/deploys it there.
-- GitHub file creation/read-back and static marker checks: pending final verification.
+- GitHub file creation/read-back and static marker checks: PASS.
 - Luau runtime/parser tests: NOT RUN.
