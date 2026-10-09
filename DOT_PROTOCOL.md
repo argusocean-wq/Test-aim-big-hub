@@ -90,3 +90,16 @@ Each of the ten passes uses the following cycle:
 - GitHub read-back: PASS.
 - Integration into the monolithic UI: NOT DONE; external module loading/injection is not assumed.
 - Luau parser and target-environment runtime tests: NOT RUN.
+
+
+## Debug UI refresh and GitHub UI research (2026-10-09)
+
+- Reviewed public GitHub UI project documentation/examples: StarGaze, VeloraUI, Sleek, imgui-for-roblox, and roblox-ui-library.
+- Used their documented patterns as design guidance: grouped sections, consistent typography, modular status/control areas, responsive constraints, theme consistency, and explicit lifetime/performance awareness. No third-party UI source was copied or loaded.
+- Reorganized the existing Debug tab into System/Input, Target/Visuals, and API/Recovery groups.
+- Added desktop/input, player/character, backend/viewport, target distance/part/visibility, FOV/activation, ESP state/rates, cache lifetimes, runtime performance, and external API capability telemetry.
+- Debug refresh is throttled to 250 ms to avoid doing diagnostic reads/raycast visibility checks every render frame.
+- Missing centralized API/error instrumentation is shown as N/A/uninstrumented, not as zero errors.
+- The existing Drawing/RobloxScreenGui backend, dark/green theme, hotkeys, and external loader/API settings are preserved.
+- Static read-back checks: PASS. Luau parser and in-game layout/executor tests: NOT RUN.
+- See `UI_RESEARCH_NOTES.md` for references and detailed notes.
