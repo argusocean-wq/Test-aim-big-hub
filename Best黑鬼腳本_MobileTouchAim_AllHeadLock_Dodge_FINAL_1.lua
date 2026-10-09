@@ -2941,20 +2941,26 @@ local function argusCreateMobileUI()
         if ArgusMobile.Reopen then ArgusMobile.Reopen.Visible=true end
     end)
 
+    -- Nexomia reference note: keep the supplied environment snippet as compatibility
+    -- context only. Do not rewrite __namecall or replace print/warn/error globally.
+    -- When the main panel is closed, this compact top-right rectangle doubles as
+    -- a live FPS readout and a one-tap reopen control.
     local reopen=Instance.new("TextButton")
-    reopen.Text="ARGUS"
+    reopen.Name="ArgusFPSPanel"
+    reopen.Text="FPS: --"
     reopen.TextColor3=Color3.fromRGB(255,255,255)
     reopen.TextSize=12
     reopen.Font=Enum.Font.GothamBold
     reopen.BackgroundColor3=Color3.fromRGB(10,10,10)
-    reopen.BorderColor3=Color3.fromRGB(255,255,255)
-    reopen.Size=UDim2.fromOffset(76,36)
+    reopen.BorderColor3=Color3.fromRGB(110,220,140)
+    reopen.Size=UDim2.fromOffset(112,36)
     reopen.AnchorPoint=Vector2.new(1,0)
-    -- Top-right reopen button stays below the Roblox mobile top bar / safe area.
+    -- Top-right FPS panel stays below the Roblox mobile top bar / safe area.
     reopen.Position=UDim2.new(1,-12,0,12)
     reopen.Visible=true
     reopen.Parent=gui
     ArgusMobile.Reopen=reopen
+    ArgusMobile.FPSPanel=reopen
     reopen.Activated:Connect(function()
         ArgusMobile.Visible=true
         frame.Visible=true
@@ -3549,13 +3555,21 @@ end)
 argusCreateMobileUI()
 
 if _G.ArgusMobileUIEnabled then
+    -- Keep the FPS readout alive while the main control panel is hidden.
     task.spawn(function()
         while ArgusMobile.Gui and ArgusMobile.Gui.Parent do
+            local fps = tonumber(_G.ArgusRuntimeFPS)
+                or (ArgusUI and tonumber(ArgusUI.FPS))
+                or 0
+            if ArgusMobile.FPSPanel and ArgusMobile.FPSPanel.Parent then
+                ArgusMobile.FPSPanel.Text = string.format("FPS: %.0f", fps)
+                ArgusMobile.FPSPanel.Visible = not (ArgusMobile.Frame and ArgusMobile.Frame.Visible)
+            end
             if ArgusMobile.Frame and ArgusMobile.Frame.Visible then
                 local status=argusGetTargetStatus()
                 ArgusMobile.Frame:SetAttribute("Status",tostring(status))
             end
-            task.wait(0.15)
+            task.wait(0.25)
         end
     end)
 end
