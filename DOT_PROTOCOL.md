@@ -82,3 +82,16 @@ These are audit targets, not confirmed defects. Each requires a focused code ins
 - GitHub read-back: PASS; rebind logic, old-listener disconnection, and GUI-destruction cleanup are present. Existing executor `Drawing` references and ADS detector remain present.
 - External executor API settings modified: NO.
 - Roblox runtime test and full Lua syntax parser: NOT RUN.
+
+
+## UI polish pass (2026-10-09)
+
+- Branch: `ui-polish-animations`.
+- Scope: mobile UI presentation only; no target-selection, ESP, input activation, executor Drawing, or external loading behavior was intentionally changed.
+- Change: introduced a restrained charcoal/mint palette, rounded cards and controls, subtle outlines, a header gradient, hover/press transitions, animated tab selection, and scale transitions for closing/reopening the mobile panel.
+- Desktop UI accent: changed the UI accent color to mint green for a consistent visual language.
+- External loader: no `loading()` implementation exists in the primary Lua source; the external Raw loader was not edited.
+- GitHub source read-back: PASS; new theme and animation helpers and their call sites are present.
+- Static text consistency: PASS for expected replacement markers and unchanged loader absence in this file.
+- Full Luau syntax parser and Roblox runtime/device test: NOT RUN.
+- Executor API settings/configuration changed: NO.

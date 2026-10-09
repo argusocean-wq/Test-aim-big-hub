@@ -1651,7 +1651,7 @@ _G.ArgusWeightDistance = 0.35
 _G.ArgusWeightHealth = 0.15
 _G.ArgusWeightCustom = 0.0
 _G.ArgusProfile = "Default"
-_G.ArgusUIAccent = Color3.fromRGB(255, 255, 255)
+_G.ArgusUIAccent = Color3.fromRGB(110, 220, 140)
 
 local ArgusUI = {
     Open = false,
@@ -2496,6 +2496,45 @@ local function argusGetUIParent()
     return LocalPlayer:WaitForChild("PlayerGui")
 end
 
+-- UI-only motion and styling helpers. Gameplay and external loading remain untouched.
+local TweenService = game:GetService("TweenService")
+local ArgusUITheme = {
+    Panel = Color3.fromRGB(13, 16, 15),
+    Surface = Color3.fromRGB(22, 27, 25),
+    SurfaceHover = Color3.fromRGB(31, 42, 35),
+    Border = Color3.fromRGB(59, 79, 66),
+    Accent = Color3.fromRGB(110, 220, 140),
+    Text = Color3.fromRGB(238, 243, 239),
+    Muted = Color3.fromRGB(164, 178, 168),
+}
+
+local function mobileCorner(object, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius or 8)
+    corner.Parent = object
+    return corner
+end
+
+local function mobileStroke(object, color, transparency, thickness)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = color or ArgusUITheme.Border
+    stroke.Transparency = transparency == nil and 0.15 or transparency
+    stroke.Thickness = thickness or 1
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = object
+    return stroke
+end
+
+local function mobileTween(object, duration, properties, style)
+    local tween = TweenService:Create(
+        object,
+        TweenInfo.new(duration or 0.16, style or Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        properties
+    )
+    tween:Play()
+    return tween
+end
+
 local function mobileClear(parent)
     for _, child in ipairs(parent:GetChildren()) do
         if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
@@ -2506,16 +2545,37 @@ end
 
 local function mobileButton(parent, text, callback, height)
     local b = Instance.new("TextButton")
-    b.BackgroundColor3 = Color3.fromRGB(24,24,24)
-    b.BorderColor3 = Color3.fromRGB(90,90,90)
-    b.BorderSizePixel = 1
-    b.TextColor3 = Color3.fromRGB(255,255,255)
+    b.BackgroundColor3 = ArgusUITheme.Surface
+    b.BorderSizePixel = 0
+    b.TextColor3 = ArgusUITheme.Text
     b.Font = Enum.Font.GothamSemibold
     b.TextSize = 13
     b.Text = text
     b.Size = UDim2.new(1,0,0,height or 38)
-    b.AutoButtonColor = true
+    b.AutoButtonColor = false
     b.Parent = parent
+    mobileCorner(b, 8)
+    local outline = mobileStroke(b, ArgusUITheme.Border, 0.25, 1)
+    b.MouseEnter:Connect(function()
+        mobileTween(b, 0.14, {BackgroundColor3 = ArgusUITheme.SurfaceHover})
+        mobileTween(outline, 0.14, {Color = ArgusUITheme.Accent, Transparency = 0.05})
+    end)
+    b.MouseLeave:Connect(function()
+        mobileTween(b, 0.16, {BackgroundColor3 = ArgusUITheme.Surface})
+        mobileTween(outline, 0.16, {Color = ArgusUITheme.Border, Transparency = 0.25})
+    end)
+    b.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch
+            or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            mobileTween(b, 0.08, {BackgroundColor3 = ArgusUITheme.SurfaceHover}, Enum.EasingStyle.Quad)
+        end
+    end)
+    b.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch
+            or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            mobileTween(b, 0.12, {BackgroundColor3 = ArgusUITheme.Surface})
+        end
+    end)
     b.Activated:Connect(function()
         pcall(callback)
     end)
@@ -2528,7 +2588,7 @@ local function mobileLabel(parent, text, size, height)
     l.Size = UDim2.new(1,0,0,height or 28)
     l.Font = Enum.Font.Gotham
     l.TextSize = size or 12
-    l.TextColor3 = Color3.fromRGB(205,205,205)
+    l.TextColor3 = ArgusUITheme.Muted
     l.TextXAlignment = Enum.TextXAlignment.Left
     l.TextWrapped = true
     l.Text = text
@@ -2556,10 +2616,12 @@ end
 
 local function mobileNumber(parent, label, key, min, max, step)
     local row = Instance.new("Frame")
-    row.BackgroundColor3 = Color3.fromRGB(18,18,18)
-    row.BorderColor3 = Color3.fromRGB(65,65,65)
+    row.BackgroundColor3 = ArgusUITheme.Panel
+    row.BorderSizePixel = 0
     row.Size = UDim2.new(1,0,0,42)
     row.Parent = parent
+    mobileCorner(row, 8)
+    mobileStroke(row, ArgusUITheme.Border, 0.35, 1)
 
     local name = Instance.new("TextLabel")
     name.BackgroundTransparency = 1
@@ -2582,6 +2644,7 @@ local function mobileNumber(parent, label, key, min, max, step)
     minus.Size = UDim2.fromOffset(32,30)
     minus.Position = UDim2.new(1,-148,0,6)
     minus.Parent = row
+    mobileCorner(minus, 6)
 
     local box = Instance.new("TextBox")
     box.BackgroundColor3 = Color3.fromRGB(10,10,10)
@@ -2594,6 +2657,8 @@ local function mobileNumber(parent, label, key, min, max, step)
     box.Size = UDim2.fromOffset(78,30)
     box.Position = UDim2.new(1,-112,0,6)
     box.Parent = row
+    mobileCorner(box, 6)
+    mobileStroke(box, ArgusUITheme.Border, 0.2, 1)
 
     local plus = Instance.new("TextButton")
     plus.BackgroundColor3 = Color3.fromRGB(35,35,35)
@@ -2605,6 +2670,7 @@ local function mobileNumber(parent, label, key, min, max, step)
     plus.Size = UDim2.fromOffset(32,30)
     plus.Position = UDim2.new(1,-32,0,6)
     plus.Parent = row
+    mobileCorner(plus, 6)
 
     local function setValue(v)
         v = tonumber(v) or tonumber(_G[key]) or min
@@ -2851,12 +2917,18 @@ local function argusCreateMobileUI()
     -- Use a top-left anchor so drag coordinates and resize coordinates always
     -- refer to the same point. This prevents the mobile panel from jumping.
     frame.AnchorPoint=Vector2.new(0,0)
-    frame.BackgroundColor3=Color3.fromRGB(8,8,8)
-    frame.BorderColor3=Color3.fromRGB(255,255,255)
-    frame.BorderSizePixel=1
+    frame.BackgroundColor3=ArgusUITheme.Panel
+    frame.BorderSizePixel=0
     frame.Visible=false
     frame.Parent=gui
+    mobileCorner(frame, 14)
+    mobileStroke(frame, ArgusUITheme.Border, 0.05, 1.2)
     ArgusMobile.Frame=frame
+
+    local panelScale = Instance.new("UIScale")
+    panelScale.Scale = 0.96
+    panelScale.Parent = frame
+    local panelTween
 
     local function argusApplyResponsiveSize()
         local camera = workspace.CurrentCamera
@@ -2924,7 +2996,7 @@ local function argusCreateMobileUI()
 
     local title=Instance.new("TextButton")
     title.Name="DragHeader"
-    title.BackgroundColor3=Color3.fromRGB(18,18,18)
+    title.BackgroundColor3=ArgusUITheme.Surface
     title.BorderSizePixel=0
     title.Size=UDim2.new(1,0,0,46)
     title.Text="ARGUS  /  "..tostring(_G.ArgusDeviceType)
@@ -2934,6 +3006,14 @@ local function argusCreateMobileUI()
     title.TextXAlignment=Enum.TextXAlignment.Left
     title.AutoButtonColor=false
     title.Parent=frame
+    mobileCorner(title, 12)
+    local headerGradient = Instance.new("UIGradient")
+    headerGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(27, 43, 33)),
+        ColorSequenceKeypoint.new(1, ArgusUITheme.Surface),
+    })
+    headerGradient.Rotation = 0
+    headerGradient.Parent = title
 
     local padding=Instance.new("UIPadding")
     padding.PaddingLeft=UDim.new(0,14)
@@ -2959,19 +3039,29 @@ local function argusCreateMobileUI()
     for _,name in ipairs(tabNames) do
         local b=Instance.new("TextButton")
         b.Size=UDim2.fromOffset(92,38)
-        b.BackgroundColor3=Color3.fromRGB(22,22,22)
-        b.BorderColor3=Color3.fromRGB(70,70,70)
-        b.TextColor3=Color3.fromRGB(230,230,230)
+        b.BackgroundColor3=(name==ArgusMobile.Tab) and ArgusUITheme.SurfaceHover or ArgusUITheme.Surface
+        b.BorderSizePixel=0
+        b.TextColor3=ArgusUITheme.Text
         b.Font=Enum.Font.GothamSemibold
         b.TextSize=11
         b.Text=name
         b.Parent=tabs
+        mobileCorner(b, 8)
+        local tabStroke = mobileStroke(b, (name==ArgusMobile.Tab) and ArgusUITheme.Accent or ArgusUITheme.Border, (name==ArgusMobile.Tab) and 0.05 or 0.5, 1)
         b.Activated:Connect(function()
             ArgusMobile.Tab=name
             argusMobileRebuild()
             for _,other in ipairs(tabs:GetChildren()) do
                 if other:IsA("TextButton") then
-                    other.BackgroundColor3=(other==b) and Color3.fromRGB(50,50,50) or Color3.fromRGB(22,22,22)
+                    local selected = other == b
+                    mobileTween(other, 0.18, {BackgroundColor3 = selected and ArgusUITheme.SurfaceHover or ArgusUITheme.Surface})
+                    local otherStroke = other:FindFirstChildOfClass("UIStroke")
+                    if otherStroke then
+                        mobileTween(otherStroke, 0.18, {
+                            Color = selected and ArgusUITheme.Accent or ArgusUITheme.Border,
+                            Transparency = selected and 0.05 or 0.5,
+                        })
+                    end
                 end
             end
         end)
@@ -2981,8 +3071,8 @@ local function argusCreateMobileUI()
     scroll.Name="Content"
     scroll.Position=UDim2.fromOffset(10,94)
     scroll.Size=UDim2.new(1,-20,1,-104)
-    scroll.BackgroundColor3=Color3.fromRGB(10,10,10)
-    scroll.BorderColor3=Color3.fromRGB(45,45,45)
+    scroll.BackgroundColor3=ArgusUITheme.Panel
+    scroll.BorderSizePixel=0
     scroll.ScrollBarThickness=5
     scroll.AutomaticCanvasSize=Enum.AutomaticSize.Y
     scroll.CanvasSize=UDim2.new()
@@ -3003,6 +3093,8 @@ local function argusCreateMobileUI()
     local contentPadding=Instance.new("UIPadding")
     contentPadding.PaddingTop=UDim.new(0,8)
     contentPadding.PaddingBottom=UDim.new(0,12)
+    contentPadding.PaddingLeft=UDim.new(0,2)
+    contentPadding.PaddingRight=UDim.new(0,2)
     contentPadding.Parent=content
 
     local close=Instance.new("TextButton")
@@ -3014,10 +3106,18 @@ local function argusCreateMobileUI()
     close.Size=UDim2.fromOffset(42,42)
     close.Position=UDim2.new(1,-45,0,2)
     close.Parent=frame
+    close.ZIndex=5
     close.Activated:Connect(function()
         ArgusMobile.Visible=false
-        frame.Visible=false
-        if ArgusMobile.Reopen then ArgusMobile.Reopen.Visible=true end
+        if panelTween then panelTween:Cancel() end
+        panelTween = mobileTween(panelScale, 0.13, {Scale = 0.94})
+        panelTween.Completed:Connect(function(state)
+            if state == Enum.PlaybackState.Completed and not ArgusMobile.Visible then
+                frame.Visible=false
+                panelScale.Scale=0.96
+                if ArgusMobile.Reopen then ArgusMobile.Reopen.Visible=true end
+            end
+        end)
     end)
 
     -- Crescrnt reference note: keep the supplied environment snippet as compatibility
@@ -3038,12 +3138,17 @@ local function argusCreateMobileUI()
     reopen.Position=UDim2.new(1,-12,0,12)
     reopen.Visible=true
     reopen.Parent=gui
+    mobileCorner(reopen, 10)
+    mobileStroke(reopen, ArgusUITheme.Accent, 0.05, 1.2)
     ArgusMobile.Reopen=reopen
     ArgusMobile.FPSPanel=reopen
     reopen.Activated:Connect(function()
         ArgusMobile.Visible=true
-        frame.Visible=true
         reopen.Visible=false
+        frame.Visible=true
+        if panelTween then panelTween:Cancel() end
+        panelScale.Scale=0.94
+        panelTween = mobileTween(panelScale, 0.2, {Scale = 1}, Enum.EasingStyle.Back)
     end)
 
     -- Drag: header works with both touch and mouse.
