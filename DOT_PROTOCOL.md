@@ -103,3 +103,12 @@ Each of the ten passes uses the following cycle:
 - The existing Drawing/RobloxScreenGui backend, dark/green theme, hotkeys, and external loader/API settings are preserved.
 - Static read-back checks: PASS. Luau parser and in-game layout/executor tests: NOT RUN.
 - See `UI_RESEARCH_NOTES.md` for references and detailed notes.
+
+
+## Crescent Hub monochrome rebrand (2026-10-09)
+
+- UI display branding is **Crescent Hub**; internal `Argus` identifiers remain unchanged to avoid unnecessary compatibility risk.
+- UI chrome uses black, white, and grayscale only, including a soft animated grayscale accent and monochrome header gradient.
+- Green UI accent tokens and green Debug section headings were replaced with grayscale values. Gameplay overlay colors were not changed because they are not UI theme elements.
+- The primary Lua path remains unchanged to preserve existing Raw loader URLs. Do not rename or migrate that path unless the loader references are deliberately updated together.
+- GitHub write/read-back: PASS. Luau parser and Roblox runtime/device UI tests: NOT RUN.
