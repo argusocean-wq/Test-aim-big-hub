@@ -717,7 +717,7 @@ _G.MobileHeadLockPreferred = true
 _G.MobileHeadLockState = "Body"
 
 -- 最大鎖定距離；0 = 不限制距離。
-_G.TargetAssistMaxDistance = 500
+_G.TargetAssistMaxDistance = 1000
 
 -- 是否排除同隊玩家
 _G.TargetAssistTeamCheck = true
