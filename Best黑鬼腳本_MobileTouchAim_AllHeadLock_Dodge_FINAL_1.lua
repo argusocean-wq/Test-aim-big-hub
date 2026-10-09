@@ -270,14 +270,18 @@ local BonesR6 = {
 local function isSameTeam(player)
     if not player or player == LocalPlayer then return player == LocalPlayer end
 
-    -- Treat players on the same Team as teammates; also handle neutral/no-Team players
-    -- consistently so a missing Team object cannot accidentally reveal allies.
+    -- Players with the same non-nil Team are teammates.
     if LocalPlayer.Team and player.Team then
         return LocalPlayer.Team == player.Team
     end
-    if LocalPlayer.Neutral and player.Neutral then
-        return true
+
+    -- Neutral players are not automatically teammates (common in FFA/test places).
+    -- Their default TeamColor can match even when they should still be visible to ESP.
+    if LocalPlayer.Neutral or player.Neutral then
+        return false
     end
+
+    -- Only use TeamColor as a fallback for non-neutral players without Team instances.
     if LocalPlayer.TeamColor and player.TeamColor then
         return LocalPlayer.TeamColor == player.TeamColor
     end
@@ -465,7 +469,9 @@ end
 
 -- RenderStepped
 RunService.RenderStepped:Connect(function()
-    if not argusShouldUpdateESP() then
+    -- CurrentCamera can be replaced during respawn/camera scripts; refresh it on the client.
+    Camera = workspace.CurrentCamera
+    if not Camera or not argusShouldUpdateESP() then
         return
     end
     for _, player in ipairs(Players:GetPlayers()) do
