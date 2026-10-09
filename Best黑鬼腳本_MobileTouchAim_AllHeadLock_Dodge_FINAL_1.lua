@@ -1567,7 +1567,7 @@ RunService:BindToRenderStep(
 )
 
 -- ============================================================
--- ARGUS CONTROL CENTER
+-- CRESCENT HUB CONTROL CENTER
 -- Added: Dashboard / Target Status / Sliders / Profiles /
 -- Keybind Manager / Debug / ESP Performance / Target Weighting /
 -- Secondary Lock State / Notifications / UI Animation
@@ -1616,7 +1616,7 @@ _G.ArgusWeightDistance = 0.35
 _G.ArgusWeightHealth = 0.15
 _G.ArgusWeightCustom = 0.0
 _G.ArgusProfile = "Default"
-_G.ArgusUIAccent = Color3.fromRGB(110, 220, 140)
+_G.ArgusUIAccent = Color3.fromRGB(220, 220, 220)
 
 local ArgusUI = {
     Open = false,
@@ -1759,6 +1759,9 @@ end
 
 local function argusUIAnim(dt)
     local a=ArgusUI.Anim
+    -- Crescent Hub monochrome accent animation: grayscale only (no hue colors).
+    local accentValue = math.floor(185 + 70 * (0.5 + 0.5 * math.sin(os.clock() * 1.2)))
+    _G.ArgusUIAccent = Color3.fromRGB(accentValue, accentValue, accentValue)
     a.Open=a.Open+(a.TargetOpen-a.Open)*math.clamp(dt*14,0,1)
     a.Alpha=a.Alpha+(a.Open-a.Alpha)*math.clamp(dt*16,0,1)
     local idx=1
@@ -2104,8 +2107,8 @@ local function argusRebuildBody()
             _G.ArgusESPUpdateRate=rates[idx%#rates+1]
             argusRebuildBody()
         end)
-        argusMakeButton("UI Theme: Black & White", x, y+91, w, 28, function()
-            _G.ArgusUIAccent=Color3.fromRGB(255,255,255)
+        argusMakeButton("UI Theme: Monochrome Gradient", x, y+91, w, 28, function()
+            _G.ArgusUIAccent=Color3.fromRGB(220,220,220)
             argusRebuildBody()
         end)
         argusMakeSlider("Prediction Time", "TargetAssistPredictionTime", x, y+138, w, 0, 0.5, 0.01)
@@ -2160,7 +2163,7 @@ local function argusRebuildBody()
         argusText("UI toggle uses RightControl to avoid the existing RightShift visual hide.", x, y+155, 10, Color3.fromRGB(150,150,150))
 
     elseif ArgusUI.Tab == "Debug" then
-        argusText("DEBUG / SYSTEM HEALTH", x, y, 11, Color3.fromRGB(110,220,140))
+        argusText("DEBUG / SYSTEM HEALTH", x, y, 11, Color3.fromRGB(190,190,190))
         argusMakeButton("Debug Mode: "..argusBoolText(_G.ArgusDebugMode), x, y+22, w, 28, function()
             _G.ArgusDebugMode=not _G.ArgusDebugMode
             argusToast("Debug Mode "..argusBoolText(_G.ArgusDebugMode))
@@ -2170,14 +2173,14 @@ local function argusRebuildBody()
         -- Compact grouped telemetry inspired by modular dashboard/inspector patterns
         -- in StarGaze, VeloraUI, Sleek and Roblox ImGui examples. Uses the existing
         -- Drawing backend and theme; no third-party UI library or remote dependency.
-        argusText("SYSTEM / INPUT", x, y+53, 10, Color3.fromRGB(110,220,140))
+        argusText("SYSTEM / INPUT", x, y+53, 10, Color3.fromRGB(190,190,190))
         argusLiveText("debug_runtime", "Runtime: starting...", x, y+70, 11)
         argusLiveText("debug_fps", "FPS: -- | Frame: -- ms | Tier: --", x, y+87, 11)
         argusLiveText("debug_input", "Input: checking... | RMB: --", x, y+104, 11)
         argusLiveText("debug_player", "Players: -- | Character: --", x, y+121, 11)
         argusLiveText("debug_backend", "Backend: -- | View: --", x, y+138, 11)
 
-        argusText("TARGET / VISUALS", x, y+157, 10, Color3.fromRGB(110,220,140))
+        argusText("TARGET / VISUALS", x, y+157, 10, Color3.fromRGB(190,190,190))
         argusLiveText("debug_target", "Target: -- | State: --", x, y+174, 11)
         argusLiveText("debug_distance", "Distance: -- | Part: --", x, y+191, 11)
         argusLiveText("debug_los", "Visibility: -- | FOV: --", x, y+208, 11)
@@ -2187,7 +2190,7 @@ local function argusRebuildBody()
         argusLiveText("debug_rate", "ESP rate: -- / -- Hz", x, y+276, 11)
         argusLiveText("debug_cache", "Cache: -- ms | LOS cache: -- ms", x, y+293, 11)
 
-        argusText("API / RECOVERY", x, y+313, 10, Color3.fromRGB(110,220,140))
+        argusText("API / RECOVERY", x, y+313, 10, Color3.fromRGB(190,190,190))
         argusLiveText("debug_api1", "Drawing: -- | loadstring: -- | HttpGet: --", x, y+330, 11)
         argusLiveText("debug_api2", "request: -- | gethui: -- | API calls: --", x, y+347, 11)
         argusLiveText("debug_health", "Tracked errors: -- | Watchdog: -- | Fail-safe: --", x, y+364, 11)
@@ -2363,12 +2366,12 @@ RunService.RenderStepped:Connect(function(dt)
         ArgusDraw.TabIndicator.Transparency=alpha
         ArgusDraw.TabIndicator.Visible=alpha>0.01
 
-        ArgusDraw.Title.Text="ARGUS"
+        ArgusDraw.Title.Text="CRESCENT HUB"
         ArgusDraw.Title.Position=Vector2.new(mx+18+slide,my+9+slide)
         ArgusDraw.Title.Transparency=alpha
         ArgusDraw.Title.Visible=alpha>0.01
         ArgusDraw.Title.Color=_G.ArgusUIAccent
-        ArgusDraw.Subtitle.Text="CONTROL CENTER"
+        ArgusDraw.Subtitle.Text="MONOCHROME INTERFACE"
         ArgusDraw.Subtitle.Position=Vector2.new(mx+82+slide,my+13+slide)
         ArgusDraw.Subtitle.Transparency=alpha
         ArgusDraw.Subtitle.Visible=alpha>0.01
@@ -2479,7 +2482,7 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 argusRebuildBody()
-argusToast("Argus Control Center ready")
+argusToast("Crescent Hub ready")
 
 
 -- =========================================================
@@ -2519,13 +2522,13 @@ end
 -- UI-only motion and styling helpers. Gameplay and external loading remain untouched.
 local TweenService = game:GetService("TweenService")
 local ArgusUITheme = {
-    Panel = Color3.fromRGB(13, 16, 15),
-    Surface = Color3.fromRGB(22, 27, 25),
-    SurfaceHover = Color3.fromRGB(31, 42, 35),
-    Border = Color3.fromRGB(59, 79, 66),
-    Accent = Color3.fromRGB(110, 220, 140),
-    Text = Color3.fromRGB(238, 243, 239),
-    Muted = Color3.fromRGB(164, 178, 168),
+    Panel = Color3.fromRGB(13, 13, 13),
+    Surface = Color3.fromRGB(24, 24, 24),
+    SurfaceHover = Color3.fromRGB(42, 42, 42),
+    Border = Color3.fromRGB(82, 82, 82),
+    Accent = Color3.fromRGB(220, 220, 220),
+    Text = Color3.fromRGB(242, 242, 242),
+    Muted = Color3.fromRGB(170, 170, 170),
 }
 
 local function mobileCorner(object, radius)
@@ -2736,7 +2739,7 @@ function argusMobileRebuild()
     if not ArgusMobile.Content then return end
     mobileClear(ArgusMobile.Content)
 
-    mobileLabel(ArgusMobile.Content, "ARGUS  /  " .. tostring(_G.ArgusDeviceType), 11, 25)
+    mobileLabel(ArgusMobile.Content, "CRESCENT HUB  /  " .. tostring(_G.ArgusDeviceType), 11, 25)
 
     if ArgusMobile.Tab == "Dashboard" then
         local status,target = argusGetTargetStatus()
@@ -3019,7 +3022,7 @@ local function argusCreateMobileUI()
     title.BackgroundColor3=ArgusUITheme.Surface
     title.BorderSizePixel=0
     title.Size=UDim2.new(1,0,0,46)
-    title.Text="ARGUS  /  "..tostring(_G.ArgusDeviceType)
+    title.Text="CRESCENT HUB  /  "..tostring(_G.ArgusDeviceType)
     title.TextColor3=Color3.fromRGB(255,255,255)
     title.TextSize=16
     title.Font=Enum.Font.GothamBold
@@ -3029,7 +3032,7 @@ local function argusCreateMobileUI()
     mobileCorner(title, 12)
     local headerGradient = Instance.new("UIGradient")
     headerGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(27, 43, 33)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(48, 48, 48)),
         ColorSequenceKeypoint.new(1, ArgusUITheme.Surface),
     })
     headerGradient.Rotation = 0
@@ -3151,7 +3154,7 @@ local function argusCreateMobileUI()
     reopen.TextSize=12
     reopen.Font=Enum.Font.GothamBold
     reopen.BackgroundColor3=Color3.fromRGB(10,10,10)
-    reopen.BorderColor3=Color3.fromRGB(110,220,140)
+    reopen.BorderColor3=Color3.fromRGB(210,210,210)
     reopen.Size=UDim2.fromOffset(112,36)
     reopen.AnchorPoint=Vector2.new(1,0)
     -- Top-right FPS panel stays below the Roblox mobile top bar / safe area.
