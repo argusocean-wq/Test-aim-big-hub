@@ -215,7 +215,8 @@ function Diagnostics.CreatePanel(parent, localPlayer)
 
     local running = true
     local elapsed = 0
-    local connection = RunService.Heartbeat:Connect(function(dt)
+    local connection
+    connection = RunService.Heartbeat:Connect(function(dt)
         elapsed += dt
         if not running or elapsed < Diagnostics.Config.RefreshInterval then return end
         elapsed = 0
