@@ -25,3 +25,11 @@ The current Raw entrypoint is:
 `https://raw.githubusercontent.com/argusocean-wq/Test-aim-big-hub/main/Best黑鬼腳本_MobileTouchAim_AllHeadLock_Dodge_FINAL_1.lua`
 
 The external loader is not embedded in the main Lua file. `loading.lua` in this repository is a hardened reference implementation; it does not automatically replace a separately hosted/external copy of the loader.
+
+
+## Crescent Hub branding (2026-10-09)
+
+- The user-facing product name and UI title are **Crescent Hub**.
+- UI chrome must use black, white, and grayscale only, including animated grayscale accents and monochrome gradients. Do not introduce colored UI accents.
+- Keep gameplay visual overlay colors separate from UI theme colors unless the owner explicitly requests changing those gameplay visuals.
+- The existing Lua filename and Raw entrypoint URL are intentionally retained for compatibility with already-configured external loaders. Do not rename/migrate the path unless all loader references are deliberately updated together.
