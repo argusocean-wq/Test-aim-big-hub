@@ -30,3 +30,12 @@ These references were used as design research, not as source-code donors. No thi
 - Luau parser, executor compatibility, and in-game UI/layout tests: NOT RUN.
 - External API call counts and full runtime error history remain unavailable until the relevant call sites are explicitly instrumented. The UI reports this honestly.
 - This change does not add camera automation or change target-selection behavior.
+
+
+## Crescent Hub monochrome rebrand (2026-10-09)
+
+- Visible product/UI name changed to **Crescent Hub** in the primary control panel, desktop/mobile header labels, and startup toast.
+- UI palette is now grayscale only: charcoal panels, gray borders/surfaces, white text, and a softly animated white-to-gray accent. Header gradient endpoints are also grayscale.
+- Removed green accents from UI theme tokens and Debug section headings. Gameplay ESP colors (such as the skeleton overlay) are intentionally not treated as UI chrome and were left unchanged.
+- Kept the existing Lua file path so already-configured Raw loader URLs do not break. The user-facing product name is Crescent Hub; the legacy filename remains a compatibility path until a deliberate loader migration is planned.
+- GitHub write/read-back: PASS. Luau parser and Roblox runtime/device UI tests: NOT RUN.
