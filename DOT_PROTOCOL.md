@@ -64,3 +64,12 @@ These are audit targets, not confirmed defects. Each requires a focused code ins
 - Runtime execution in Roblox: NOT RUN.
 - Full Lua parser/linter: NOT RUN.
 - Protected external executor API settings modified: NO.
+
+## First verified optimization (2026-10-09)
+
+- Source change: removed the unused `ArgusFinal.TouchStarted` table and `finalTouchCleanup()` loop. The loop only attempted to handle `nil` keys yielded by `pairs()`, which cannot occur; the table had no other references.
+- Source commit: `8b5436a9dad43164c30c15d13452625feffe8ced`.
+- Post-write GitHub read-back: PASS; the dead identifiers are absent, the existing executor `Drawing.new` references remain, and the ADS detector remains present.
+- External executor API settings modified: NO.
+- Runtime behavior test: NOT RUN.
+- This is one verified cleanup, not a claim that all ten passes are complete.
