@@ -106,3 +106,12 @@ These are audit targets, not confirmed defects. Each requires a focused code ins
 - Important: the existing external loader is not embedded in the main Lua file. This repository file is a reference implementation and does not update a separately hosted loader unless the owner copies/deploys it there.
 - GitHub file creation/read-back and static marker checks: PASS.
 - Luau runtime/parser tests: NOT RUN.
+
+
+## Crescent Hub monochrome rebrand (2026-10-09)
+
+- User-facing product/UI branding is **Crescent Hub**; internal `Argus` identifiers remain unchanged to reduce compatibility risk.
+- UI chrome uses black, white, and grayscale only, including a softly animated white-to-gray accent and a monochrome header gradient.
+- Green UI theme tokens were replaced with grayscale values. Gameplay overlay colors (for example, the skeleton visual) remain unchanged because they are not UI chrome.
+- The existing Lua path is retained so previously configured Raw loader URLs continue to work. Do not rename/migrate the path unless loader references are updated together.
+- GitHub write/read-back: PASS. Luau parser and Roblox runtime/device UI tests: NOT RUN.
