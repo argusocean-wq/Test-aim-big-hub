@@ -1295,9 +1295,61 @@ local function getAutoSingleVisibleTarget()
     return AutoSingleVisibleState.Target, AutoSingleVisibleState.Count
 end
 
+-- Camera-FOV based ADS detection. A sustained FOV reduction is treated as zoom-in.
+-- The first unzoomed camera FOV observed becomes the baseline; games using non-FOV zoom
+-- effects will need a game-specific ADS signal instead.
+local ArgusADSState = {
+    Camera = nil,
+    BaseFOV = nil,
+    Active = false,
+}
+
+local function isCameraADSActive()
+    local camera = workspace.CurrentCamera
+    if not camera then
+        ArgusADSState.Camera = nil
+        ArgusADSState.BaseFOV = nil
+        ArgusADSState.Active = false
+        return false
+    end
+
+    local currentFOV = tonumber(camera.FieldOfView)
+    if not currentFOV then return false end
+
+    if ArgusADSState.Camera ~= camera or not ArgusADSState.BaseFOV then
+        ArgusADSState.Camera = camera
+        ArgusADSState.BaseFOV = currentFOV
+        ArgusADSState.Active = false
+        return false
+    end
+
+    local baseFOV = ArgusADSState.BaseFOV
+    local threshold = math.clamp(tonumber(_G.TargetAssistADSZoomThreshold) or 6, 1, 25)
+    if currentFOV <= baseFOV - threshold then
+        ArgusADSState.Active = true
+    elseif currentFOV >= baseFOV - threshold * 0.35 then
+        ArgusADSState.Active = false
+    end
+
+    -- Track wider, non-ADS camera FOV changes without following a zoom-in downward.
+    if not ArgusADSState.Active and currentFOV > baseFOV + 8 then
+        ArgusADSState.BaseFOV = currentFOV
+    end
+
+    _G.ArgusADSActive = ArgusADSState.Active
+    _G.ArgusADSFOV = currentFOV
+    _G.ArgusADSBaseFOV = ArgusADSState.BaseFOV
+    return ArgusADSState.Active
+end
+
 local function isAimActive()
     if not _G.TargetAssistEnabled then
         return false
+    end
+
+    -- Zoom-in detection is the first activation signal; existing input modes remain fallbacks.
+    if isCameraADSActive() then
+        return true
     end
 
     if _G.TargetAssistAutoSingleVisible == true then
