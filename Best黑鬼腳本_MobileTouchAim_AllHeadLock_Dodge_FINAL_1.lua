@@ -691,6 +691,11 @@ Players.PlayerRemoving:Connect(clearESP)
 
 _G.TargetAssistEnabled = false
 
+-- 自動單目標模式：僅當 1000 studs 內恰好有一名可見、存活且非隊友玩家時自動啟動。
+_G.TargetAssistAutoSingleVisible = true
+_G.TargetAssistAutoVisibleRange = 1000
+_G.TargetAssistAutoCountInterval = 0.035
+
 -- 可選：
 -- "Head" / "UpperTorso" / "LowerTorso" / "HumanoidRootPart" / "Auto"
 _G.TargetAssistPart = "Head"
@@ -1101,7 +1106,7 @@ local function getBestTarget()
                     local point, visible = part and Camera:WorldToViewportPoint(part.Position)
                     if part and visible and point.Z > 0 then
                         local screenDistance = (Vector2.new(point.X, point.Y) - screenCenter).Magnitude
-                        if not fovEnabled or screenDistance <= fovRadius then
+                        if not fovEnabled or _G.TargetAssistAutoSingleVisible == true or screenDistance <= fovRadius then
                             local score = getTargetScore(player, screenCenter, localRoot)
                             if score and score < bestScore then
                                 bestScore = score
@@ -1197,9 +1202,57 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
+local AutoSingleVisibleState = { At = 0, Count = 0, Target = nil }
+
+local function getAutoSingleVisibleTarget()
+    if _G.TargetAssistAutoSingleVisible ~= true then return nil, 0 end
+    local now = os.clock()
+    local interval = math.clamp(tonumber(_G.TargetAssistAutoCountInterval) or 0.035, 0.01, 0.2)
+    if now - AutoSingleVisibleState.At < interval then
+        return AutoSingleVisibleState.Target, AutoSingleVisibleState.Count
+    end
+
+    AutoSingleVisibleState.At = now
+    AutoSingleVisibleState.Count = 0
+    AutoSingleVisibleState.Target = nil
+
+    local localCharacter = LocalPlayer.Character
+    local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+    local camera = workspace.CurrentCamera
+    if not localRoot or not camera then return nil, 0 end
+
+    local maxDistance = math.clamp(tonumber(_G.TargetAssistAutoVisibleRange) or 1000, 1, 1000)
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and not (_G.TargetAssistTeamCheck and isSameTeam(player)) then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            local part = character and getTargetPart(character)
+            if humanoid and humanoid.Health > 0 and root and part
+                and (localRoot.Position - root.Position).Magnitude <= maxDistance then
+                local screenPoint, onScreen = camera:WorldToViewportPoint(part.Position)
+                if onScreen and screenPoint.Z > 0 and hasLineOfSight(part) then
+                    AutoSingleVisibleState.Count += 1
+                    AutoSingleVisibleState.Target = player
+                    if AutoSingleVisibleState.Count > 1 then
+                        AutoSingleVisibleState.Target = nil
+                        break
+                    end
+                end
+            end
+        end
+    end
+    return AutoSingleVisibleState.Target, AutoSingleVisibleState.Count
+end
+
 local function isAimActive()
     if not _G.TargetAssistEnabled then
         return false
+    end
+
+    if _G.TargetAssistAutoSingleVisible == true then
+        local _, visibleCount = getAutoSingleVisibleTarget()
+        return visibleCount == 1
     end
 
     local deviceType = _G.ArgusDeviceType or "Desktop"
@@ -1345,6 +1398,12 @@ local function updateTargetAssist(dt)
 
     local cameraPosition = Camera.CFrame.Position
     local smoothness = math.max(0.01, tonumber(_G.TargetAssistSmoothness) or 8)
+
+    -- 自動單目標模式：首次鎖定約 0.1 秒完成轉向；持續追蹤約 0.05 秒完成主要轉向。
+    if _G.TargetAssistAutoSingleVisible == true then
+        local lockAge = math.max(0, now - (TargetAssist.LockStartedAt or now))
+        smoothness = lockAge < 0.1 and 30 or 60
+    end
     local predictedPosition
 
     -- 手機專用強度：Aimbot 開啟即為強鎖，滑桿只調整跟隨力度。
