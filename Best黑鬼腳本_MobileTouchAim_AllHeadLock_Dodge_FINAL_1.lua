@@ -2941,7 +2941,7 @@ local function argusCreateMobileUI()
         if ArgusMobile.Reopen then ArgusMobile.Reopen.Visible=true end
     end)
 
-    -- Nexomia reference note: keep the supplied environment snippet as compatibility
+    -- Crescrnt reference note: keep the supplied environment snippet as compatibility
     -- context only. Do not rewrite __namecall or replace print/warn/error globally.
     -- When the main panel is closed, this compact top-right rectangle doubles as
     -- a live FPS readout and a one-tap reopen control.
