@@ -10,6 +10,9 @@ _G.TracerESP    = true
 _G.SkeletonESP  = true
 _G.TeamCheck    = true
 _G.TeamColorESP = true
+-- ESP render range is measured in Roblox studs (not real-world meters).
+_G.ESPMaxDistance = tonumber(_G.ESPMaxDistance) or 1000
+_G.ESPShowTeammates = false
 
 local RunService = game:GetService("RunService")
 -- Client-only guard: ESP / Aim / Head Lock / UI / health monitor all run locally.
@@ -265,9 +268,20 @@ local BonesR6 = {
 }
 
 local function isSameTeam(player)
-    if not _G.TeamCheck then return false end
-    if not LocalPlayer.Team or not player.Team then return false end
-    return LocalPlayer.Team == player.Team
+    if not player or player == LocalPlayer then return player == LocalPlayer end
+
+    -- Treat players on the same Team as teammates; also handle neutral/no-Team players
+    -- consistently so a missing Team object cannot accidentally reveal allies.
+    if LocalPlayer.Team and player.Team then
+        return LocalPlayer.Team == player.Team
+    end
+    if LocalPlayer.Neutral and player.Neutral then
+        return true
+    end
+    if LocalPlayer.TeamColor and player.TeamColor then
+        return LocalPlayer.TeamColor == player.TeamColor
+    end
+    return false
 end
 
 local function getPlayerColor(player)
@@ -456,7 +470,7 @@ RunService.RenderStepped:Connect(function()
     end
     for _, player in ipairs(Players:GetPlayers()) do
         
-        if isSameTeam(player) then
+        if player ~= LocalPlayer and not _G.ESPShowTeammates and isSameTeam(player) then
     local esp = ESPObjects[player]
     if esp then
         -- 隱藏所有 ESP
@@ -518,6 +532,26 @@ end
         local headPos = Camera:WorldToViewportPoint(head.Position + Vector3.new(0,0.5,0))
         local esp = ESPObjects[player]
         local teamColor = getPlayerColor(player)
+        local localCharacter = LocalPlayer.Character
+        local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+        local maxESPDistance = math.max(0, tonumber(_G.ESPMaxDistance) or 1000)
+        local distance = localRoot and (localRoot.Position - root.Position).Magnitude or math.huge
+
+        if distance > maxESPDistance then
+            esp.Box.Visible = false
+            esp.BoxFill.Visible = false
+            esp.HealthBar.Visible = false
+            esp.HealthOutline.Visible = false
+            esp.NameTag.Visible = false
+            esp.ToolText.Visible = false
+            esp.Tracer.Visible = false
+            for _, line in pairs(esp.Skeleton) do line.Visible = false end
+            if esp.Highlight then
+                esp.Highlight:Destroy()
+                esp.Highlight = nil
+            end
+            continue
+        end
 
         if not onScreen then
             esp.Box.Visible = false
