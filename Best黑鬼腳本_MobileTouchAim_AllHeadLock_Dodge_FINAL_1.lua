@@ -24,6 +24,37 @@ if not LocalPlayer then
     return
 end
 
+-- Remove only stale Nexus Control Center overlays from previous script runs.
+-- This prevents an older ScreenGui from remaining visible after the script is updated.
+local function argusRemoveLegacyNexusControlCenter()
+    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
+    for _, descendant in ipairs(playerGui:GetDescendants()) do
+        if descendant:IsA("ScreenGui") then
+            local normalizedName = string.lower(descendant.Name):gsub("[%s%p_]", "")
+            local isNexusControlCenter = normalizedName:find("nexus", 1, true)
+                and normalizedName:find("control", 1, true)
+                and normalizedName:find("center", 1, true)
+            if not isNexusControlCenter then
+                for _, child in ipairs(descendant:GetDescendants()) do
+                    if child:IsA("TextLabel") or child:IsA("TextButton") then
+                        local label = string.upper(tostring(child.Text or "")):gsub("%s+", " ")
+                        if label:find("NEXUS", 1, true)
+                            and label:find("CONTROL", 1, true)
+                            and label:find("CENTER", 1, true) then
+                            isNexusControlCenter = true
+                            break
+                        end
+                    end
+                end
+            end
+            if isNexusControlCenter then
+                descendant:Destroy()
+            end
+        end
+    end
+end
+argusRemoveLegacyNexusControlCenter()
+
 local ESPObjects = {}
 
 
@@ -1418,7 +1449,7 @@ _G.ArgusProfile = "Default"
 _G.ArgusUIAccent = Color3.fromRGB(255, 255, 255)
 
 local ArgusUI = {
-    Open = true,
+    Open = false,
     Tab = "Dashboard",
     X = 70,
     Y = 90,
@@ -1433,7 +1464,7 @@ local ArgusUI = {
     FPS = 0,
     FrameCount = 0,
     FPSClock = os.clock(),
-    Anim = {Open=1,TargetOpen=1,Alpha=1,Tab=0,TargetTab=0,Toast=0,ToastY=10,Pressed=nil},
+    Anim = {Open=0,TargetOpen=0,Alpha=0,Tab=0,TargetTab=0,Toast=0,ToastY=10,Pressed=nil},
 }
 
 local ArgusProfiles = {}
@@ -2197,6 +2228,18 @@ RunService.RenderStepped:Connect(function(dt)
         ArgusDraw.Status.Visible=false
         ArgusDraw.Footer.Visible=false
         for _,t in pairs(ArgusDraw.TabTexts) do t.Visible=false end
+        for _,obj in ipairs(ArgusDraw.BodyTexts) do
+            obj.Visible=false
+        end
+        for _,button in ipairs(ArgusDraw.Buttons) do
+            button.Box.Visible=false
+            button.Text.Visible=false
+        end
+        for _,slider in ipairs(ArgusDraw.Sliders) do
+            slider.Back.Visible=false
+            slider.Fill.Visible=false
+            slider.Text.Visible=false
+        end
     end
 
     argusUpdateLivePanel()
@@ -2237,7 +2280,7 @@ local ArgusMobile = {
     Scroll = nil,
     Content = nil,
     Tab = "Dashboard",
-    Visible = true,
+    Visible = false,
     Reopen = nil,
     Dragging = false,
     DragStart = nil,
@@ -2578,6 +2621,12 @@ local function argusCreateMobileUI()
         return
     end
 
+    -- A previous execution may leave this GUI in PlayerGui because local Lua
+    -- state is recreated on rerun. Destroy the stale copy before rebuilding.
+    local playerGui = argusGetUIParent()
+    local staleGui = playerGui:FindFirstChild("ArgusFullControlUI")
+    if staleGui then staleGui:Destroy() end
+
     local gui=Instance.new("ScreenGui")
     gui.Name="ArgusFullControlUI"
     gui.ResetOnSpawn=false
@@ -2600,6 +2649,7 @@ local function argusCreateMobileUI()
     frame.BackgroundColor3=Color3.fromRGB(8,8,8)
     frame.BorderColor3=Color3.fromRGB(255,255,255)
     frame.BorderSizePixel=1
+    frame.Visible=false
     frame.Parent=gui
     ArgusMobile.Frame=frame
 
@@ -2749,7 +2799,7 @@ local function argusCreateMobileUI()
     reopen.AnchorPoint=Vector2.new(1,0)
     -- Top-right reopen button stays below the Roblox mobile top bar / safe area.
     reopen.Position=UDim2.new(1,-12,0,12)
-    reopen.Visible=false
+    reopen.Visible=true
     reopen.Parent=gui
     ArgusMobile.Reopen=reopen
     reopen.Activated:Connect(function()
