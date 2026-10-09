@@ -106,3 +106,14 @@ These are audit targets, not confirmed defects. Each requires a focused code ins
 - Important: the existing external loader is not embedded in the main Lua file. This repository file is a reference implementation and does not update a separately hosted loader unless the owner copies/deploys it there.
 - GitHub file creation/read-back and static marker checks: PASS.
 - Luau runtime/parser tests: NOT RUN.
+
+
+## Desktop-only input and panel update (2026-10-09)
+
+- Forced `ArgusDeviceType = "Desktop"`, disabled `ArgusMobileUIEnabled`, and set input source to `MouseKeyboard`; mobile UI creation now exits through its existing feature gate and touch activation paths stay inactive.
+- Changed aim activation so it requires the right mouse button to be held. Camera zoom/ADS and single-visible-target detection no longer activate aim assistance by themselves.
+- Increased the desktop panel width from 480 to 520 pixels and added viewport clamping so the panel remains reachable after dragging or display-size changes.
+- Executor/Drawing APIs and external Raw loader settings were not changed.
+- Automated enemy-count filtering and timed upper-body target attraction were not changed in this pass; those mechanics are not part of the desktop UI/input cleanup.
+- GitHub read-back/static marker checks: pending final verification.
+- Luau parser and Roblox runtime/device tests: NOT RUN.
