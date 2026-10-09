@@ -1347,44 +1347,9 @@ local function isAimActive()
         return false
     end
 
-    -- Zoom-in detection is the first activation signal; existing input modes remain fallbacks.
-    if isCameraADSActive() then
-        return true
-    end
-
-    if _G.TargetAssistAutoSingleVisible == true then
-        local _, visibleCount = getAutoSingleVisibleTarget()
-        return visibleCount == 1
-    end
-
-    local deviceType = _G.ArgusDeviceType or "Desktop"
-    local source = _G.ArgusInputSource or "Auto"
-
-    -- 手機：只使用「按住遊戲畫面」作為啟動條件，不依賴 Aim/Q 按鍵。
-    -- Hybrid 在觸控輸入時也使用相同規則；電腦滑鼠鍵盤邏輯保持原樣。
-    if source == "Touch" or (source == "Auto" and deviceType == "Mobile") then
-        return MobileTouchState.Active == true
-    end
-
-    if source == "Auto" and deviceType == "Hybrid" and MobileTouchState.Active then
-        return true
-    end
-
-    if source == "MouseKeyboard" and deviceType == "Mobile" then
-        return false
-    end
-
-    local rightMouse = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
-    local toggle = TargetAssist.ToggleState
-    local mode = _G.TargetAssistActivationMode
-
-    if mode == "Toggle" then
-        return toggle
-    elseif mode == "Both" then
-        return rightMouse or toggle
-    end
-
-    return rightMouse
+    -- Desktop-only: aim assistance is active only while the right mouse button is held.
+    -- Camera zoom/ADS and single-visible-target detection must never activate it by themselves.
+    return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
 end
 
 local function updateTargetAssist(dt)
@@ -1602,7 +1567,7 @@ RunService:BindToRenderStep(
 )
 
 -- ============================================================
--- ARGUS CONTROL CENTER
+-- CRESCENT HUB CONTROL CENTER
 -- Added: Dashboard / Target Status / Sliders / Profiles /
 -- Keybind Manager / Debug / ESP Performance / Target Weighting /
 -- Secondary Lock State / Notifications / UI Animation
@@ -1651,14 +1616,14 @@ _G.ArgusWeightDistance = 0.35
 _G.ArgusWeightHealth = 0.15
 _G.ArgusWeightCustom = 0.0
 _G.ArgusProfile = "Default"
-_G.ArgusUIAccent = Color3.fromRGB(110, 220, 140)
+_G.ArgusUIAccent = Color3.fromRGB(220, 220, 220)
 
 local ArgusUI = {
     Open = false,
     Tab = "Dashboard",
-    X = 70,
-    Y = 90,
-    W = 480,
+    X = 60,
+    Y = 60,
+    W = 520,
     H = 560,
     Dragging = false,
     DragOffset = Vector2.zero,
@@ -1794,6 +1759,9 @@ end
 
 local function argusUIAnim(dt)
     local a=ArgusUI.Anim
+    -- Crescent Hub monochrome accent animation: grayscale only (no hue colors).
+    local accentValue = math.floor(185 + 70 * (0.5 + 0.5 * math.sin(os.clock() * 1.2)))
+    _G.ArgusUIAccent = Color3.fromRGB(accentValue, accentValue, accentValue)
     a.Open=a.Open+(a.TargetOpen-a.Open)*math.clamp(dt*14,0,1)
     a.Alpha=a.Alpha+(a.Open-a.Alpha)*math.clamp(dt*16,0,1)
     local idx=1
@@ -1966,19 +1934,61 @@ local function argusUpdateLivePanel()
         argusSetLiveText("dash_selection", "Selection: ".._G.ArgusTargetSelectionMode)
         argusSetLiveText("dash_secondary", "Secondary: "..argusBoolText(_G.TargetAssistSecondaryLock))
     elseif ArgusUI.Tab == "Debug" then
+        -- Debug is intentionally throttled: raycasts and target inspection do not need
+        -- to run every rendered frame. The panel remains live at a 4 Hz refresh rate.
+        local now = os.clock()
+        if now - (ArgusUI.DebugLastRefresh or 0) < 0.25 then return end
+        ArgusUI.DebugLastRefresh = now
+
         local status, target = argusGetTargetStatus()
-        local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        local targetRoot = target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-        local distance = (localRoot and targetRoot) and (localRoot.Position-targetRoot.Position).Magnitude or 0
-        local los = target and target.Character and getTargetPart(target.Character) and hasLineOfSight(getTargetPart(target.Character)) or false
-        argusSetLiveText("debug_target", "Target: "..(target and target.Name or "None"))
-        argusSetLiveText("debug_distance", string.format("Distance: %.1f", distance))
-        argusSetLiveText("debug_fov", "FOV: "..tostring(_G.TargetAssistFOVRadius))
-        argusSetLiveText("debug_los", "LOS: "..argusBoolText(los))
-        argusSetLiveText("debug_selection", "Selection: ".._G.ArgusTargetSelectionMode)
-        argusSetLiveText("debug_perf", "ESP Performance: "..argusBoolText(_G.ArgusESPPerformance))
-        argusSetLiveText("debug_rate", "Update Rate: "..tostring(_G.ArgusESPUpdateRate))
-        argusSetLiveText("debug_humanized", "Humanized: "..argusBoolText(_G.TargetAssistHumanizedAim))
+        local character = LocalPlayer.Character
+        local localRoot = character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso"))
+        local targetCharacter = target and target.Character
+        local targetRoot = targetCharacter and (targetCharacter:FindFirstChild("HumanoidRootPart") or targetCharacter:FindFirstChild("UpperTorso") or targetCharacter:FindFirstChild("Torso"))
+        local distance = (localRoot and targetRoot) and (localRoot.Position - targetRoot.Position).Magnitude or nil
+        local targetPart = targetCharacter and getTargetPart(targetCharacter) or nil
+        local los = false
+        if targetPart then
+            local losOk, losResult = pcall(hasLineOfSight, targetPart)
+            los = losOk and losResult == true
+        end
+
+        local camera = workspace.CurrentCamera
+        local viewport = camera and camera.ViewportSize or Vector2.new(0, 0)
+        local fps = tonumber(ArgusUI.FPS) or 0
+        local frameMs = fps > 0 and (1000 / fps) or 0
+        local tier = fps >= 55 and "HIGH" or (fps >= 40 and "MED" or (fps >= 30 and "LOW" or "CRITICAL"))
+        local rightMouse = false
+        pcall(function()
+            rightMouse = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+        end)
+        local drawingAvailable = type(Drawing) == "table" and type(Drawing.new) == "function"
+        local requestAvailable = type(request) == "function"
+            or (type(syn) == "table" and type(syn.request) == "function")
+            or type(http_request) == "function"
+        local httpGetAvailable = false
+        pcall(function() httpGetAvailable = type(game.HttpGet) == "function" end)
+        local trackedErrors = _G.ArgusRuntimeErrorCount or _G.ArgusAPIErrorCount or "N/A"
+        local targetPartName = targetPart and targetPart.Name or "N/A"
+        local effectiveRate = tonumber(_G.ArgusESPEffectiveRate) or tonumber(_G.ArgusESPUpdateRate) or 60
+
+        argusSetLiveText("debug_runtime", "Runtime: "..tostring(status).." | Debug: "..argusBoolText(_G.ArgusDebugMode))
+        argusSetLiveText("debug_fps", string.format("FPS: %.0f | Frame: %.1f ms | Tier: %s", fps, frameMs, tier), tier == "CRITICAL" and Color3.fromRGB(255,120,120) or nil)
+        argusSetLiveText("debug_input", "Input: "..(UserInputService.MouseEnabled and UserInputService.KeyboardEnabled and "Desktop ready" or "Mouse/keyboard unavailable").." | RMB: "..argusBoolText(rightMouse))
+        argusSetLiveText("debug_player", "Players: "..#Players:GetPlayers().." | Character: "..(character and character.Parent and "Ready" or "Missing"))
+        argusSetLiveText("debug_backend", "Backend: "..tostring(_G.ArgusDrawingBackend or (drawingAvailable and "Drawing" or "Unknown")).." | View: "..string.format("%.0fx%.0f", viewport.X, viewport.Y))
+        argusSetLiveText("debug_target", "Target: "..(target and target.Name or "None").." | State: "..tostring(TargetAssist and TargetAssist.State or status))
+        argusSetLiveText("debug_distance", "Distance: "..(distance and string.format("%.1f studs", distance) or "N/A").." | Part: "..targetPartName)
+        argusSetLiveText("debug_los", "Visibility: "..(los and "VISIBLE" or (target and "BLOCKED / UNKNOWN" or "NO TARGET")).." | FOV: "..tostring(_G.TargetAssistFOVRadius))
+        argusSetLiveText("debug_activation", "Activation: "..tostring(_G.TargetAssistActivationMode).." | Feature: "..argusBoolText(_G.TargetAssistEnabled).." | RMB: "..argusBoolText(rightMouse))
+        argusSetLiveText("debug_selection", "Selection: "..tostring(_G.ArgusTargetSelectionMode).." | Cache: "..argusBoolText(_G.ArgusTargetCacheEnabled ~= false))
+        argusSetLiveText("debug_visuals", "ESP: "..argusBoolText(_G.ESPEnabled).." | Box: "..argusBoolText(_G.BoxESP).." | Skeleton: "..argusBoolText(_G.SkeletonESP).." | Highlight: "..argusBoolText(_G.HighlightESP))
+        argusSetLiveText("debug_rate", string.format("ESP rate: %.0f / %.0f Hz", tonumber(_G.ArgusESPUpdateRate) or 60, effectiveRate))
+        argusSetLiveText("debug_cache", string.format("Cache: %.0f ms | LOS cache: %.0f ms", (tonumber(_G.ArgusTargetCacheLifetime) or 0.08) * 1000, (tonumber(_G.ArgusLOSCacheLifetime) or 0.055) * 1000))
+        argusSetLiveText("debug_api1", "Drawing: "..argusBoolText(drawingAvailable).." | loadstring: "..argusBoolText(type(loadstring) == "function").." | HttpGet: "..argusBoolText(httpGetAvailable))
+        argusSetLiveText("debug_api2", "request: "..argusBoolText(requestAvailable).." | gethui: "..argusBoolText(type(gethui) == "function").." | API calls: uninstrumented")
+        argusSetLiveText("debug_health", "Tracked errors: "..tostring(trackedErrors).." | Watchdog: "..argusBoolText(_G.ArgusStateWatchdog).." | Fail-safe: "..argusBoolText(_G.ArgusFailSafe))
+        argusSetLiveText("debug_humanized", "Humanized: "..argusBoolText(_G.TargetAssistHumanizedAim).." | Prediction: "..argusBoolText(_G.TargetAssistPredictionEnabled))
     end
 end
 
@@ -2097,8 +2107,8 @@ local function argusRebuildBody()
             _G.ArgusESPUpdateRate=rates[idx%#rates+1]
             argusRebuildBody()
         end)
-        argusMakeButton("UI Theme: Black & White", x, y+91, w, 28, function()
-            _G.ArgusUIAccent=Color3.fromRGB(255,255,255)
+        argusMakeButton("UI Theme: Monochrome Gradient", x, y+91, w, 28, function()
+            _G.ArgusUIAccent=Color3.fromRGB(220,220,220)
             argusRebuildBody()
         end)
         argusMakeSlider("Prediction Time", "TargetAssistPredictionTime", x, y+138, w, 0, 0.5, 0.01)
@@ -2153,28 +2163,39 @@ local function argusRebuildBody()
         argusText("UI toggle uses RightControl to avoid the existing RightShift visual hide.", x, y+155, 10, Color3.fromRGB(150,150,150))
 
     elseif ArgusUI.Tab == "Debug" then
-        argusText("DEBUG / DIAGNOSTICS", x, y, 11, Color3.fromRGB(170,170,170))
-        argusMakeButton("Debug Mode: "..argusBoolText(_G.ArgusDebugMode), x, y+25, w, 30, function()
+        argusText("DEBUG / SYSTEM HEALTH", x, y, 11, Color3.fromRGB(190,190,190))
+        argusMakeButton("Debug Mode: "..argusBoolText(_G.ArgusDebugMode), x, y+22, w, 28, function()
             _G.ArgusDebugMode=not _G.ArgusDebugMode
             argusToast("Debug Mode "..argusBoolText(_G.ArgusDebugMode))
             argusRebuildBody()
         end)
-        local status,target=argusGetTargetStatus()
-        local char=target and target.Character
-        local root=char and char:FindFirstChild("HumanoidRootPart")
-        local localChar=LocalPlayer.Character
-        local localRoot=localChar and localChar:FindFirstChild("HumanoidRootPart")
-        local distance=root and localRoot and (root.Position-localRoot.Position).Magnitude or 0
-        argusText("Target State: "..status, x, y+68, 13, argusStatusColor(status))
-        argusLiveText("debug_target", "Target: "..(target and target.Name or "None"), x, y+92, 12)
-        argusLiveText("debug_distance", string.format("Distance: %.1f",distance), x, y+115, 12)
-        argusLiveText("debug_fov", "FOV: "..tostring(_G.TargetAssistFOVRadius), x, y+138, 12)
-        argusLiveText("debug_los", "LOS: "..argusBoolText(target and target.Character and hasLineOfSight(getTargetPart(target.Character)) or false), x, y+161, 12)
-        argusLiveText("debug_selection", "Selection: ".._G.ArgusTargetSelectionMode, x, y+184, 12)
-        argusLiveText("debug_perf", "ESP Performance: "..argusBoolText(_G.ArgusESPPerformance), x, y+207, 12)
-        argusLiveText("debug_rate", "Update Rate: "..tostring(_G.ArgusESPUpdateRate), x, y+230, 12)
-        argusLiveText("debug_humanized", "Humanized: "..argusBoolText(_G.TargetAssistHumanizedAim), x, y+253, 12)
-        argusText("No gameplay state is changed by Debug Mode.", x, y+285, 10, Color3.fromRGB(150,150,150))
+
+        -- Compact grouped telemetry inspired by modular dashboard/inspector patterns
+        -- in StarGaze, VeloraUI, Sleek and Roblox ImGui examples. Uses the existing
+        -- Drawing backend and theme; no third-party UI library or remote dependency.
+        argusText("SYSTEM / INPUT", x, y+53, 10, Color3.fromRGB(190,190,190))
+        argusLiveText("debug_runtime", "Runtime: starting...", x, y+70, 11)
+        argusLiveText("debug_fps", "FPS: -- | Frame: -- ms | Tier: --", x, y+87, 11)
+        argusLiveText("debug_input", "Input: checking... | RMB: --", x, y+104, 11)
+        argusLiveText("debug_player", "Players: -- | Character: --", x, y+121, 11)
+        argusLiveText("debug_backend", "Backend: -- | View: --", x, y+138, 11)
+
+        argusText("TARGET / VISUALS", x, y+157, 10, Color3.fromRGB(190,190,190))
+        argusLiveText("debug_target", "Target: -- | State: --", x, y+174, 11)
+        argusLiveText("debug_distance", "Distance: -- | Part: --", x, y+191, 11)
+        argusLiveText("debug_los", "Visibility: -- | FOV: --", x, y+208, 11)
+        argusLiveText("debug_activation", "Activation: -- | Feature: -- | RMB: --", x, y+225, 11)
+        argusLiveText("debug_selection", "Selection: -- | Cache: --", x, y+242, 11)
+        argusLiveText("debug_visuals", "ESP: -- | Box: -- | Skeleton: -- | Highlight: --", x, y+259, 11)
+        argusLiveText("debug_rate", "ESP rate: -- / -- Hz", x, y+276, 11)
+        argusLiveText("debug_cache", "Cache: -- ms | LOS cache: -- ms", x, y+293, 11)
+
+        argusText("API / RECOVERY", x, y+313, 10, Color3.fromRGB(190,190,190))
+        argusLiveText("debug_api1", "Drawing: -- | loadstring: -- | HttpGet: --", x, y+330, 11)
+        argusLiveText("debug_api2", "request: -- | gethui: -- | API calls: --", x, y+347, 11)
+        argusLiveText("debug_health", "Tracked errors: -- | Watchdog: -- | Fail-safe: --", x, y+364, 11)
+        argusLiveText("debug_humanized", "Humanized: -- | Prediction: --", x, y+381, 11)
+        argusText("Telemetry refresh: 250 ms. N/A means no central error/API hook is installed.", x, y+402, 9, Color3.fromRGB(150,150,150))
     end
 
     argusRenderSliders()
@@ -2298,6 +2319,13 @@ RunService.RenderStepped:Connect(function(dt)
 
     argusUpdateTargetWeights()
 
+    -- Keep the desktop panel reachable after display-size changes or dragging.
+    local viewport = (workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize) or Vector2.new(1280, 720)
+    local maxX = math.max(8, viewport.X - ArgusUI.W - 8)
+    local maxY = math.max(8, viewport.Y - ArgusUI.H - 8)
+    ArgusUI.X = math.clamp(ArgusUI.X, 8, maxX)
+    ArgusUI.Y = math.clamp(ArgusUI.Y, 8, maxY)
+
     if ArgusUI.Open then
         local mx,my=ArgusUI.X,ArgusUI.Y
         local anim=ArgusUI.Anim
@@ -2338,12 +2366,12 @@ RunService.RenderStepped:Connect(function(dt)
         ArgusDraw.TabIndicator.Transparency=alpha
         ArgusDraw.TabIndicator.Visible=alpha>0.01
 
-        ArgusDraw.Title.Text="ARGUS"
+        ArgusDraw.Title.Text="CRESCENT HUB"
         ArgusDraw.Title.Position=Vector2.new(mx+18+slide,my+9+slide)
         ArgusDraw.Title.Transparency=alpha
         ArgusDraw.Title.Visible=alpha>0.01
         ArgusDraw.Title.Color=_G.ArgusUIAccent
-        ArgusDraw.Subtitle.Text="CONTROL CENTER"
+        ArgusDraw.Subtitle.Text="MONOCHROME INTERFACE"
         ArgusDraw.Subtitle.Position=Vector2.new(mx+82+slide,my+13+slide)
         ArgusDraw.Subtitle.Transparency=alpha
         ArgusDraw.Subtitle.Visible=alpha>0.01
@@ -2454,30 +2482,25 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 argusRebuildBody()
-argusToast("Argus Control Center ready")
+argusToast("Crescent Hub ready")
 
 
 -- =========================================================
--- ARGUS DEVICE DETECTION / FULL MOBILE UI
+-- ARGUS DESKTOP-ONLY INPUT / UI
 -- =========================================================
+-- This build intentionally supports desktop mouse + keyboard only.
+-- Keep mobile UI disabled even on touch-capable hybrid devices.
 local ArgusDevice = {
     IsTouch = UserInputService.TouchEnabled,
     HasKeyboard = UserInputService.KeyboardEnabled,
     HasMouse = UserInputService.MouseEnabled,
 }
 
-if ArgusDevice.IsTouch and not ArgusDevice.HasKeyboard then
-    _G.ArgusDeviceType = "Mobile"
-elseif ArgusDevice.IsTouch and ArgusDevice.HasKeyboard then
-    _G.ArgusDeviceType = "Hybrid"
-else
-    _G.ArgusDeviceType = "Desktop"
-end
-
-_G.ArgusMobileUIEnabled = (_G.ArgusDeviceType ~= "Desktop")
+_G.ArgusDeviceType = "Desktop"
+_G.ArgusMobileUIEnabled = false
 _G.ArgusMobileAimActive = false
-_G.ArgusInputSource = "Auto" -- Auto / Touch / MouseKeyboard
-_G.ArgusDeviceVersion = "Dual"
+_G.ArgusInputSource = "MouseKeyboard"
+_G.ArgusDeviceVersion = "Desktop"
 
 local ArgusMobile = {
     Gui = nil,
@@ -2499,13 +2522,13 @@ end
 -- UI-only motion and styling helpers. Gameplay and external loading remain untouched.
 local TweenService = game:GetService("TweenService")
 local ArgusUITheme = {
-    Panel = Color3.fromRGB(13, 16, 15),
-    Surface = Color3.fromRGB(22, 27, 25),
-    SurfaceHover = Color3.fromRGB(31, 42, 35),
-    Border = Color3.fromRGB(59, 79, 66),
-    Accent = Color3.fromRGB(110, 220, 140),
-    Text = Color3.fromRGB(238, 243, 239),
-    Muted = Color3.fromRGB(164, 178, 168),
+    Panel = Color3.fromRGB(13, 13, 13),
+    Surface = Color3.fromRGB(24, 24, 24),
+    SurfaceHover = Color3.fromRGB(42, 42, 42),
+    Border = Color3.fromRGB(82, 82, 82),
+    Accent = Color3.fromRGB(220, 220, 220),
+    Text = Color3.fromRGB(242, 242, 242),
+    Muted = Color3.fromRGB(170, 170, 170),
 }
 
 local function mobileCorner(object, radius)
@@ -2716,7 +2739,7 @@ function argusMobileRebuild()
     if not ArgusMobile.Content then return end
     mobileClear(ArgusMobile.Content)
 
-    mobileLabel(ArgusMobile.Content, "ARGUS  /  " .. tostring(_G.ArgusDeviceType), 11, 25)
+    mobileLabel(ArgusMobile.Content, "CRESCENT HUB  /  " .. tostring(_G.ArgusDeviceType), 11, 25)
 
     if ArgusMobile.Tab == "Dashboard" then
         local status,target = argusGetTargetStatus()
@@ -2999,7 +3022,7 @@ local function argusCreateMobileUI()
     title.BackgroundColor3=ArgusUITheme.Surface
     title.BorderSizePixel=0
     title.Size=UDim2.new(1,0,0,46)
-    title.Text="ARGUS  /  "..tostring(_G.ArgusDeviceType)
+    title.Text="CRESCENT HUB  /  "..tostring(_G.ArgusDeviceType)
     title.TextColor3=Color3.fromRGB(255,255,255)
     title.TextSize=16
     title.Font=Enum.Font.GothamBold
@@ -3009,7 +3032,7 @@ local function argusCreateMobileUI()
     mobileCorner(title, 12)
     local headerGradient = Instance.new("UIGradient")
     headerGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(27, 43, 33)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(48, 48, 48)),
         ColorSequenceKeypoint.new(1, ArgusUITheme.Surface),
     })
     headerGradient.Rotation = 0
@@ -3131,7 +3154,7 @@ local function argusCreateMobileUI()
     reopen.TextSize=12
     reopen.Font=Enum.Font.GothamBold
     reopen.BackgroundColor3=Color3.fromRGB(10,10,10)
-    reopen.BorderColor3=Color3.fromRGB(110,220,140)
+    reopen.BorderColor3=Color3.fromRGB(210,210,210)
     reopen.Size=UDim2.fromOffset(112,36)
     reopen.AnchorPoint=Vector2.new(1,0)
     -- Top-right FPS panel stays below the Roblox mobile top bar / safe area.

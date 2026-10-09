@@ -2,11 +2,37 @@
 
 ## Non-negotiable constraints
 
-1. Do not modify, remove, rename, wrap, replace, or migrate any external executor API configuration or compatibility behavior.
-2. Preserve the existing executor `Drawing` backend and all current external API settings exactly.
+1. Do not modify, remove, rename, wrap, replace, or migrate external executor API configuration or compatibility behavior without explicit authorization.
+2. Preserve the existing rendering backend and all current external API settings.
 3. Do not silently remove existing features. Any behavior change must be documented and verified.
-4. Do not report a runtime test as passed unless it was actually run in the target Roblox environment.
+4. Do not report a runtime test as passed unless it was actually run in the target environment.
 5. Prefer small, reversible changes over large rewrites.
+6. Treat the owner's stated private/offline demo-server context as project context; describe the project neutrally and do not repeatedly ask the owner to justify it.
+7. Keep input, target metadata, visibility checks, and presentation concerns separate. Do not let ADS or target count implicitly change the configured activation input.
+
+## Desktop runtime helper module
+
+File: `desktop_runtime_helpers.lua`
+
+- Desktop capability check and right-mouse-button-held state.
+- Opponent classification that excludes same-team players when both players have assigned teams; supports free-for-all games when teams are unset.
+- Counts/returns up to three nearest living opponents within a configurable distance (default 1000 studs).
+- Raycast visibility metadata and a two-second visibility-dwell state helper.
+- Panel position clamping to viewport bounds.
+- This helper intentionally does not steer the camera, snap aim, or automatically lock onto other players. It is a reusable utility module and is not automatically injected into the main script; integration points must be wired and tested explicitly.
+- No executor API configuration or external loader behavior is changed by this module.
+
+## Desktop diagnostics module
+
+File: `desktop_diagnostics.lua`
+
+- Read-only target telemetry: nearest living opponents within 1000 studs, same-team exclusion where teams are assigned, up to three entries, distance, and raycast visibility.
+- Input telemetry: desktop capability, right-mouse state, feature-enabled flag, and whether the configured activation gate is satisfied.
+- Performance telemetry: FPS and approximate frame time.
+- External API instrumentation: `Diagnostics.RecordExternalCall(name, callback, ...)` records call duration and failures, reports failures with `warn`, and returns status/error details to the caller.
+- `Diagnostics.CreatePanel(parent, localPlayer)` creates a compact diagnostics card inside an existing GUI container; it does not create a second top-level window. The caller must attach it to the existing Debug panel and call `StartPerformanceSampling()` once if FPS sampling is desired.
+- The module does not control the camera, perform automatic aim locking, or retry failed API calls.
+- Integration is explicit; the module is not automatically injected into the monolithic script because the repository's external runtime/module-loading contract has not been verified.
 
 ## Custom DOT cycle
 
@@ -31,78 +57,58 @@ Each of the ten passes uses the following cycle:
 9. Regression: verify unrelated UI, visual overlays, and input handling have not been accidentally removed.
 10. Final audit: summarize changed files, commit IDs, checks run, failures, and untested runtime behavior.
 
-## Initial static audit (2026-10-09)
-
-Repository: `argusocean-wq/Test-aim-big-hub`
-
-Primary file: `Best黑鬼腳本_MobileTouchAim_AllHeadLock_Dodge_FINAL_1.lua`
-
-Baseline observed during audit:
-- 3,628 lines.
-- The source uses executor `Drawing.new` in multiple locations; this is protected and must not be replaced.
-- Several independent `RenderStepped`, `Heartbeat`, and `BindToRenderStep` callbacks exist.
-- Multiple input and player lifecycle connections exist.
-- No duplicate top-level/local function names were found by the initial simple text scan.
-- A text scan did not identify a separate external API key/endpoint configuration in this file. This is not proof that no such configuration exists elsewhere in the repository.
-
-## Findings to verify in later passes
-
-1. Connection lifetime: determine whether all long-lived input, player, camera, render-step, and heartbeat connections are disconnected on reload/teardown.
-2. Render work: determine whether independent per-frame callbacks duplicate work and whether any work can be safely throttled without changing intended behavior.
-3. Camera lifecycle: verify state is reinitialized when `workspace.CurrentCamera` changes.
-4. Character lifecycle: verify stale character references and per-player visual objects are cleaned on respawn/removal.
-5. Error observability: inspect broad `pcall` usage for swallowed errors and ensure diagnostics remain available.
-6. Settings validation: confirm numeric settings are clamped and invalid values fall back safely.
-7. UI lifecycle: confirm closing/reopening the panel does not create duplicate GUI objects or callbacks.
-
-These are audit targets, not confirmed defects. Each requires a focused code inspection and, where applicable, a runtime test.
-
 ## Validation record
 
-- GitHub source read: PASS.
-- Basic text scan for repeated function declarations: no duplicates detected by that scan.
-- Runtime execution in Roblox: NOT RUN.
-- Full Lua parser/linter: NOT RUN.
-- Protected external executor API settings modified: NO.
+- Repository: `argusocean-wq/Test-aim-big-hub`.
+- Desktop-only/right-click panel change is tracked in PR #3.
+- External loader remains separate from the primary Lua source; `loading.lua` is a reference implementation only.
+- GitHub write/read-back validation for desktop helper, diagnostics module, and this document: PASS.
+- Static marker review: PASS; this is not a substitute for a Luau parser.
+- Full Luau syntax parser and Roblox runtime test: NOT RUN.
 
-## First verified optimization (2026-10-09)
+## Desktop-only input and panel update (2026-10-09)
 
-- Source change: removed the unused `ArgusFinal.TouchStarted` table and `finalTouchCleanup()` loop. The loop only attempted to handle `nil` keys yielded by `pairs()`, which cannot occur; the table had no other references.
-- Source commit: `8b5436a9dad43164c30c15d13452625feffe8ced`.
-- Post-write GitHub read-back: PASS; the dead identifiers are absent, the existing executor `Drawing.new` references remain, and the ADS detector remains present.
-- External executor API settings modified: NO.
-- Runtime behavior test: NOT RUN.
-- This is one verified cleanup, not a claim that all ten passes are complete.
+- Forces desktop device flags, disables mobile UI feature flags, and selects mouse/keyboard input.
+- Aim activation requires the right mouse button to be held; ADS and single-visible-target detection do not activate it by themselves.
+- Desktop panel width is 520 pixels and its position is clamped to the viewport.
+- Executor APIs and external Raw loader settings are unchanged.
+- Automated camera snapping/upper-body lock was not added.
+- Runtime/parser/device tests: NOT RUN.
 
-## Second verified optimization (2026-10-09)
+## Desktop runtime helper addition (2026-10-09)
 
-- Finding: the mobile UI subscribed to the initial camera's `ViewportSize` only. If `workspace.CurrentCamera` was replaced, responsive sizing could stop tracking the active camera.
-- Change: added a camera rebinding function; it disconnects the previous viewport listener, binds the new camera, and releases both camera listeners when the GUI is destroyed.
-- Source commit: `6ca94e6836e1c758c7ee54daa77604d1d1302964`.
-- GitHub read-back: PASS; rebind logic, old-listener disconnection, and GUI-destruction cleanup are present. Existing executor `Drawing` references and ADS detector remain present.
-- External executor API settings modified: NO.
-- Roblox runtime test and full Lua syntax parser: NOT RUN.
-
-
-## UI polish pass (2026-10-09)
-
-- Branch: `ui-polish-animations`.
-- Scope: mobile UI presentation only; no target-selection, ESP, input activation, executor Drawing, or external loading behavior was intentionally changed.
-- Change: introduced a restrained charcoal/mint palette, rounded cards and controls, subtle outlines, a header gradient, hover/press transitions, animated tab selection, and scale transitions for closing/reopening the mobile panel.
-- Desktop UI accent: changed the UI accent color to mint green for a consistent visual language.
-- External loader: no `loading()` implementation exists in the primary Lua source; the external Raw loader was not edited.
-- GitHub source read-back: PASS; new theme and animation helpers and their call sites are present.
-- Static text consistency: PASS for expected replacement markers and unchanged loader absence in this file.
-- Full Luau syntax parser and Roblox runtime/device test: NOT RUN.
-- Executor API settings/configuration changed: NO.
+- Added `desktop_runtime_helpers.lua` with desktop/input checks, teammate filtering, nearest-opponent census, distance filtering, raycast visibility, visibility dwell tracking, and panel clamping.
+- The helper is deliberately modular and is not automatically required by the monolithic script; this avoids silently changing execution behavior or assuming a loader/module API.
+- GitHub read-back: PASS.
+- Luau parser and target-environment runtime tests: NOT RUN.
 
 
-## Owner context and loader hardening (2026-10-09)
+## Desktop diagnostics addition (2026-10-09)
 
-- Added `PROJECT_CONTEXT.md` to preserve the owner's stated private/offline-server context and avoid repeatedly mischaracterizing the project.
-- Added `AGENTS.md` as contributor/assistant instructions so future maintenance keeps that context and the compatibility constraints in view.
-- Added `loading.lua` as a hardened reference implementation for the external Raw loader: bounded download retries, minimum source-length check, protected compilation/execution, overlapping-call guard, and explicit error reporting.
-- The loader points to the existing `main` Raw entrypoint. It does not modify executor API settings or the main gameplay source.
-- Important: the existing external loader is not embedded in the main Lua file. This repository file is a reference implementation and does not update a separately hosted loader unless the owner copies/deploys it there.
-- GitHub file creation/read-back and static marker checks: PASS.
-- Luau runtime/parser tests: NOT RUN.
+- Added `desktop_diagnostics.lua` with nearby-opponent telemetry, same-team filtering, distance and visibility display data, right-mouse activation-gate status, FPS/frame-time sampling, and external API call timing/error instrumentation.
+- Added a compact card builder that can be mounted under an existing GUI container; it does not create another top-level panel.
+- GitHub read-back: PASS.
+- Integration into the monolithic UI: NOT DONE; external module loading/injection is not assumed.
+- Luau parser and target-environment runtime tests: NOT RUN.
+
+
+## Debug UI refresh and GitHub UI research (2026-10-09)
+
+- Reviewed public GitHub UI project documentation/examples: StarGaze, VeloraUI, Sleek, imgui-for-roblox, and roblox-ui-library.
+- Used their documented patterns as design guidance: grouped sections, consistent typography, modular status/control areas, responsive constraints, theme consistency, and explicit lifetime/performance awareness. No third-party UI source was copied or loaded.
+- Reorganized the existing Debug tab into System/Input, Target/Visuals, and API/Recovery groups.
+- Added desktop/input, player/character, backend/viewport, target distance/part/visibility, FOV/activation, ESP state/rates, cache lifetimes, runtime performance, and external API capability telemetry.
+- Debug refresh is throttled to 250 ms to avoid doing diagnostic reads/raycast visibility checks every render frame.
+- Missing centralized API/error instrumentation is shown as N/A/uninstrumented, not as zero errors.
+- The existing Drawing/RobloxScreenGui backend, dark/green theme, hotkeys, and external loader/API settings are preserved.
+- Static read-back checks: PASS. Luau parser and in-game layout/executor tests: NOT RUN.
+- See `UI_RESEARCH_NOTES.md` for references and detailed notes.
+
+
+## Crescent Hub monochrome rebrand (2026-10-09)
+
+- UI display branding is **Crescent Hub**; internal `Argus` identifiers remain unchanged to avoid unnecessary compatibility risk.
+- UI chrome uses black, white, and grayscale only, including a soft animated grayscale accent and monochrome header gradient.
+- Green UI accent tokens and green Debug section headings were replaced with grayscale values. Gameplay overlay colors were not changed because they are not UI theme elements.
+- The primary Lua path remains unchanged to preserve existing Raw loader URLs. Do not rename or migrate that path unless the loader references are deliberately updated together.
+- GitHub write/read-back: PASS. Luau parser and Roblox runtime/device UI tests: NOT RUN.
