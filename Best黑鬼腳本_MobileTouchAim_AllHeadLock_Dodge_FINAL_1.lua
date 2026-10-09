@@ -513,6 +513,49 @@ end
         local root = char and char:FindFirstChild("HumanoidRootPart")
         local head = char and char:FindFirstChild("Head")
 
+        -- Custom/non-standard character models: use Highlight directly instead of trying
+        -- to draw R6/R15 skeleton bones. These models may have no Humanoid, Head, or
+        -- HumanoidRootPart, but still contain BaseParts that Highlight can render.
+        local hasStandardRig = char and humanoid and root and head
+        if _G.ESPEnabled and player ~= LocalPlayer and char and char.Parent and not hasStandardRig then
+            local anyPart = char:FindFirstChildWhichIsA("BasePart", true)
+            if anyPart then
+                createESP(player)
+                local customEsp = ESPObjects[player]
+                if _G.HighlightESP and customEsp and not isSameTeam(player) then
+                    if not customEsp.Highlight or not customEsp.Highlight.Parent then
+                        local h = Instance.new("Highlight")
+                        h.Name = "ESPHighlight_CustomModel"
+                        h.Adornee = char
+                        h.FillTransparency = 0.35
+                        h.OutlineTransparency = 1
+                        h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        h.Parent = char
+                        customEsp.Highlight = h
+                    end
+                    customEsp.Highlight.Adornee = char
+                    customEsp.Highlight.FillColor = getPlayerColor(player)
+                    customEsp.Highlight.Enabled = true
+                elseif customEsp and customEsp.Highlight then
+                    customEsp.Highlight:Destroy()
+                    customEsp.Highlight = nil
+                end
+                if customEsp then
+                    customEsp.Box.Visible = false
+                    customEsp.BoxFill.Visible = false
+                    customEsp.HealthBar.Visible = false
+                    customEsp.HealthOutline.Visible = false
+                    customEsp.NameTag.Visible = false
+                    customEsp.ToolText.Visible = false
+                    customEsp.Tracer.Visible = false
+                    for _, line in pairs(customEsp.Skeleton) do
+                        if line then line.Visible = false end
+                    end
+                end
+                continue
+            end
+        end
+
         if not (_G.ESPEnabled and player ~= LocalPlayer and char and humanoid and root and head and humanoid.Health > 0) then
     local esp = ESPObjects[player]
     if esp then
