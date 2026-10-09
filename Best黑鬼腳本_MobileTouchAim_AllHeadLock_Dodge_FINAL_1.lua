@@ -3239,7 +3239,6 @@ local ArgusFinal = {
     LastCameraType = nil,
     LastViewportSize = nil,
     LastGoodCharacter = nil,
-    TouchStarted = {},
     Connections = {},
     Errors = 0,
 }
@@ -3308,12 +3307,6 @@ finalAdaptiveRate = function()
     return minRate
 end
 
-local function finalTouchCleanup()
-    for input in pairs(ArgusFinal.TouchStarted) do
-        if input == nil then ArgusFinal.TouchStarted[input] = nil end
-    end
-end
-
 -- Camera recovery: only repairs invalid/current-camera transitions; it does not fight normal camera control.
 local function finalCameraGuard()
     if not _G.ArgusCameraRecovery then return end
@@ -3377,7 +3370,6 @@ RunService:BindToRenderStep('NexusArgusFinalGuard',Enum.RenderPriority.First.Val
     finalValidate()
     finalCameraGuard()
     ArgusFinal.ESPAccumulator += math.max(dt,0)
-    finalTouchCleanup()
 
     local now = os.clock()
     local searchInterval = _G.ArgusTargetSearchInterval
