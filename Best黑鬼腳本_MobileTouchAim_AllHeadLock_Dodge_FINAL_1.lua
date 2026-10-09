@@ -1114,89 +1114,11 @@ end
 local MobileTouchState = {
     Active = false,
     Touches = {},
-    Button = nil,
 }
 
 _G.ArgusMobileAimRegion = _G.ArgusMobileAimRegion or "RightHalf"
 _G.ArgusMobileAimTouchMinX = tonumber(_G.ArgusMobileAimTouchMinX) or 0.45
-_G.ArgusMobileAimActivationMode = _G.ArgusMobileAimActivationMode or "HoldButton"
-
--- Dedicated mobile hold-to-aim control, independent of the settings panel.
-local function argusCreateMobileHoldAimButton()
-    if not UserInputService.TouchEnabled then return end
-    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
-    local old = playerGui:FindFirstChild("ARGUS_HoldAimControl")
-    if old then old:Destroy() end
-
-    local screen = Instance.new("ScreenGui")
-    screen.Name = "ARGUS_HoldAimControl"
-    screen.ResetOnSpawn = false
-    screen.IgnoreGuiInset = true
-    screen.DisplayOrder = 1000000
-    screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    screen.Parent = playerGui
-
-    local button = Instance.new("TextButton")
-    button.Name = "HoldAimButton"
-    button.AnchorPoint = Vector2.new(0.5, 0.5)
-    button.Position = UDim2.new(0.82, 0, 0.70, 0)
-    button.Size = UDim2.fromOffset(112, 58)
-    button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-    button.BackgroundTransparency = 0.12
-    button.BorderSizePixel = 0
-    button.AutoButtonColor = false
-    button.Text = "HOLD TO AIM"
-    button.TextColor3 = Color3.fromRGB(255, 255, 255)
-    button.TextSize = 14
-    button.Font = Enum.Font.GothamBold
-    button.Active = true
-    button.Visible = (_G.ArgusMobileAimActivationMode == "HoldButton")
-    button.Parent = screen
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 12)
-    corner.Parent = button
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(0, 255, 0)
-    stroke.Thickness = 1.5
-    stroke.Transparency = 0.15
-    stroke.Parent = button
-
-    local held = {}
-    local function sync()
-        MobileTouchState.Active = next(held) ~= nil
-        _G.ArgusMobileAimActive = MobileTouchState.Active
-        button.BackgroundColor3 = MobileTouchState.Active
-            and Color3.fromRGB(0, 125, 55) or Color3.fromRGB(35, 35, 35)
-        button.Text = MobileTouchState.Active and "AIMING..." or "HOLD TO AIM"
-    end
-
-    button.InputBegan:Connect(function(input)
-        if _G.ArgusMobileAimActivationMode ~= "HoldButton" then return end
-        if input.UserInputType == Enum.UserInputType.Touch
-            or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            held[input] = true
-            sync()
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if held[input] then
-            held[input] = nil
-            sync()
-        end
-    end)
-
-    UserInputService.WindowFocusReleased:Connect(function()
-        table.clear(held)
-        sync()
-    end)
-
-    MobileTouchState.Button = button
-    return button
-end
-
-local MobileHoldAimButton = argusCreateMobileHoldAimButton()
+_G.ArgusMobileAimActivationMode = "ScreenHold"
 
 local function isMobileAimTouchAllowed(position)
     if not position then return false end
@@ -2581,10 +2503,6 @@ function argusMobileRebuild()
         end)
         mobileButton(ArgusMobile.Content,"Third Person / 第三人稱: "..argusBoolText(ThirdPersonState.Enabled),function() toggleThirdPerson(); argusMobileRebuild() end)
         mobileNumber(ArgusMobile.Content,"Third Person Distance / 第三人稱距離","ThirdPersonDistance",4,20,0.5)
-        mobileCycle(ArgusMobile.Content,"Aim Trigger / 瞄準啟動方式","ArgusMobileAimActivationMode",{"HoldButton","ScreenHold"})
-        if MobileHoldAimButton then
-            MobileHoldAimButton.Visible = (_G.ArgusMobileAimActivationMode == "HoldButton")
-        end
         mobileCycle(ArgusMobile.Content,"Aim Touch Region / 觸控瞄準區","ArgusMobileAimRegion",{"RightHalf","FullScreen"})
         mobileButton(ArgusMobile.Content, "Visual Hide: "..argusBoolText(_G.TargetAssistVisualsHidden), function()
             _G.TargetAssistVisualsHidden = not _G.TargetAssistVisualsHidden
@@ -2675,12 +2593,7 @@ function argusMobileRebuild()
         mobileToggle(ArgusMobile.Content,"Fail Safe","ArgusFailSafe")
         mobileToggle(ArgusMobile.Content,"Debug Mode","ArgusDebugMode")
         mobileLabel(ArgusMobile.Content,"UI / device: "..tostring(_G.ArgusDeviceType),11,28)
-        mobileLabel(ArgusMobile.Content,"預設按住綠框 HOLD TO AIM 才會瞄準；放開立即停止。",11,34)
-        mobileCycle(ArgusMobile.Content,"Aim Trigger / 瞄準啟動方式","ArgusMobileAimActivationMode",{"HoldButton","ScreenHold"})
-        if MobileHoldAimButton then
-            MobileHoldAimButton.Visible = (_G.ArgusMobileAimActivationMode == "HoldButton")
-        end
-        mobileLabel(ArgusMobile.Content,"ScreenHold 為可選的全畫面按住模式。",11,28)
+        mobileLabel(ArgusMobile.Content,"按住設定的觸控區域啟動瞄準；放開立即停止。",11,34)
         mobileNumber(ArgusMobile.Content,"Aim Touch Start X","ArgusMobileAimTouchMinX",0.25,0.8,0.05)
         mobileNumber(ArgusMobile.Content,"Weight Crosshair","ArgusWeightCrosshair",0,2,0.05)
         mobileNumber(ArgusMobile.Content,"Weight Distance","ArgusWeightDistance",0,2,0.05)
