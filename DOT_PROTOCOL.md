@@ -50,8 +50,9 @@ Each of the ten passes uses the following cycle:
 - Repository: `argusocean-wq/Test-aim-big-hub`.
 - Desktop-only/right-click panel change is tracked in PR #3.
 - External loader remains separate from the primary Lua source; `loading.lua` is a reference implementation only.
-- GitHub file read/write validation: performed per change and recorded below.
-- Full Luau syntax parser and Roblox runtime test: NOT RUN unless explicitly updated here.
+- GitHub write/read-back validation for the desktop helper and this document: PASS.
+- Static marker review: PASS; this is not a substitute for a Luau parser.
+- Full Luau syntax parser and Roblox runtime test: NOT RUN.
 
 ## Desktop-only input and panel update (2026-10-09)
 
@@ -66,5 +67,5 @@ Each of the ten passes uses the following cycle:
 
 - Added `desktop_runtime_helpers.lua` with desktop/input checks, teammate filtering, nearest-opponent census, distance filtering, raycast visibility, visibility dwell tracking, and panel clamping.
 - The helper is deliberately modular and is not automatically required by the monolithic script; this avoids silently changing execution behavior or assuming a loader/module API.
-- Static marker/read-back check: to be completed after the write.
+- GitHub read-back: PASS.
 - Luau parser and target-environment runtime tests: NOT RUN.
