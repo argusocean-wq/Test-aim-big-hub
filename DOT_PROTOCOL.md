@@ -73,3 +73,12 @@ These are audit targets, not confirmed defects. Each requires a focused code ins
 - External executor API settings modified: NO.
 - Runtime behavior test: NOT RUN.
 - This is one verified cleanup, not a claim that all ten passes are complete.
+
+## Second verified optimization (2026-10-09)
+
+- Finding: the mobile UI subscribed to the initial camera's `ViewportSize` only. If `workspace.CurrentCamera` was replaced, responsive sizing could stop tracking the active camera.
+- Change: added a camera rebinding function; it disconnects the previous viewport listener, binds the new camera, and releases both camera listeners when the GUI is destroyed.
+- Source commit: `6ca94e6836e1c758c7ee54daa77604d1d1302964`.
+- GitHub read-back: PASS; rebind logic, old-listener disconnection, and GUI-destruction cleanup are present. Existing executor `Drawing` references and ADS detector remain present.
+- External executor API settings modified: NO.
+- Roblox runtime test and full Lua syntax parser: NOT RUN.
