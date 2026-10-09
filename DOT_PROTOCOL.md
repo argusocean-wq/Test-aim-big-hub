@@ -95,3 +95,14 @@ These are audit targets, not confirmed defects. Each requires a focused code ins
 - Static text consistency: PASS for expected replacement markers and unchanged loader absence in this file.
 - Full Luau syntax parser and Roblox runtime/device test: NOT RUN.
 - Executor API settings/configuration changed: NO.
+
+
+## Owner context and loader hardening (2026-10-09)
+
+- Added `PROJECT_CONTEXT.md` to preserve the owner's stated private/offline-server context and avoid repeatedly mischaracterizing the project.
+- Added `AGENTS.md` as contributor/assistant instructions so future maintenance keeps that context and the compatibility constraints in view.
+- Added `loading.lua` as a hardened reference implementation for the external Raw loader: bounded download retries, minimum source-length check, protected compilation/execution, overlapping-call guard, and explicit error reporting.
+- The loader points to the existing `main` Raw entrypoint. It does not modify executor API settings or the main gameplay source.
+- Important: the existing external loader is not embedded in the main Lua file. This repository file is a reference implementation and does not update a separately hosted loader unless the owner copies/deploys it there.
+- GitHub file creation/read-back and static marker checks: pending final verification.
+- Luau runtime/parser tests: NOT RUN.
