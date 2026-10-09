@@ -1931,19 +1931,61 @@ local function argusUpdateLivePanel()
         argusSetLiveText("dash_selection", "Selection: ".._G.ArgusTargetSelectionMode)
         argusSetLiveText("dash_secondary", "Secondary: "..argusBoolText(_G.TargetAssistSecondaryLock))
     elseif ArgusUI.Tab == "Debug" then
+        -- Debug is intentionally throttled: raycasts and target inspection do not need
+        -- to run every rendered frame. The panel remains live at a 4 Hz refresh rate.
+        local now = os.clock()
+        if now - (ArgusUI.DebugLastRefresh or 0) < 0.25 then return end
+        ArgusUI.DebugLastRefresh = now
+
         local status, target = argusGetTargetStatus()
-        local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        local targetRoot = target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-        local distance = (localRoot and targetRoot) and (localRoot.Position-targetRoot.Position).Magnitude or 0
-        local los = target and target.Character and getTargetPart(target.Character) and hasLineOfSight(getTargetPart(target.Character)) or false
-        argusSetLiveText("debug_target", "Target: "..(target and target.Name or "None"))
-        argusSetLiveText("debug_distance", string.format("Distance: %.1f", distance))
-        argusSetLiveText("debug_fov", "FOV: "..tostring(_G.TargetAssistFOVRadius))
-        argusSetLiveText("debug_los", "LOS: "..argusBoolText(los))
-        argusSetLiveText("debug_selection", "Selection: ".._G.ArgusTargetSelectionMode)
-        argusSetLiveText("debug_perf", "ESP Performance: "..argusBoolText(_G.ArgusESPPerformance))
-        argusSetLiveText("debug_rate", "Update Rate: "..tostring(_G.ArgusESPUpdateRate))
-        argusSetLiveText("debug_humanized", "Humanized: "..argusBoolText(_G.TargetAssistHumanizedAim))
+        local character = LocalPlayer.Character
+        local localRoot = character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso"))
+        local targetCharacter = target and target.Character
+        local targetRoot = targetCharacter and (targetCharacter:FindFirstChild("HumanoidRootPart") or targetCharacter:FindFirstChild("UpperTorso") or targetCharacter:FindFirstChild("Torso"))
+        local distance = (localRoot and targetRoot) and (localRoot.Position - targetRoot.Position).Magnitude or nil
+        local targetPart = targetCharacter and getTargetPart(targetCharacter) or nil
+        local los = false
+        if targetPart then
+            local losOk, losResult = pcall(hasLineOfSight, targetPart)
+            los = losOk and losResult == true
+        end
+
+        local camera = workspace.CurrentCamera
+        local viewport = camera and camera.ViewportSize or Vector2.new(0, 0)
+        local fps = tonumber(ArgusUI.FPS) or 0
+        local frameMs = fps > 0 and (1000 / fps) or 0
+        local tier = fps >= 55 and "HIGH" or (fps >= 40 and "MED" or (fps >= 30 and "LOW" or "CRITICAL"))
+        local rightMouse = false
+        pcall(function()
+            rightMouse = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+        end)
+        local drawingAvailable = type(Drawing) == "table" and type(Drawing.new) == "function"
+        local requestAvailable = type(request) == "function"
+            or (type(syn) == "table" and type(syn.request) == "function")
+            or type(http_request) == "function"
+        local httpGetAvailable = false
+        pcall(function() httpGetAvailable = type(game.HttpGet) == "function" end)
+        local trackedErrors = _G.ArgusRuntimeErrorCount or _G.ArgusAPIErrorCount or "N/A"
+        local targetPartName = targetPart and targetPart.Name or "N/A"
+        local effectiveRate = tonumber(_G.ArgusESPEffectiveRate) or tonumber(_G.ArgusESPUpdateRate) or 60
+
+        argusSetLiveText("debug_runtime", "Runtime: "..tostring(status).." | Debug: "..argusBoolText(_G.ArgusDebugMode))
+        argusSetLiveText("debug_fps", string.format("FPS: %.0f | Frame: %.1f ms | Tier: %s", fps, frameMs, tier), tier == "CRITICAL" and Color3.fromRGB(255,120,120) or nil)
+        argusSetLiveText("debug_input", "Input: "..(UserInputService.MouseEnabled and UserInputService.KeyboardEnabled and "Desktop ready" or "Mouse/keyboard unavailable").." | RMB: "..argusBoolText(rightMouse))
+        argusSetLiveText("debug_player", "Players: "..#Players:GetPlayers().." | Character: "..(character and character.Parent and "Ready" or "Missing"))
+        argusSetLiveText("debug_backend", "Backend: "..tostring(_G.ArgusDrawingBackend or (drawingAvailable and "Drawing" or "Unknown")).." | View: "..string.format("%.0fx%.0f", viewport.X, viewport.Y))
+        argusSetLiveText("debug_target", "Target: "..(target and target.Name or "None").." | State: "..tostring(TargetAssist and TargetAssist.State or status))
+        argusSetLiveText("debug_distance", "Distance: "..(distance and string.format("%.1f studs", distance) or "N/A").." | Part: "..targetPartName)
+        argusSetLiveText("debug_los", "Visibility: "..(los and "VISIBLE" or (target and "BLOCKED / UNKNOWN" or "NO TARGET")).." | FOV: "..tostring(_G.TargetAssistFOVRadius))
+        argusSetLiveText("debug_activation", "Activation: "..tostring(_G.TargetAssistActivationMode).." | Feature: "..argusBoolText(_G.TargetAssistEnabled).." | RMB: "..argusBoolText(rightMouse))
+        argusSetLiveText("debug_selection", "Selection: "..tostring(_G.ArgusTargetSelectionMode).." | Cache: "..argusBoolText(_G.ArgusTargetCacheEnabled ~= false))
+        argusSetLiveText("debug_visuals", "ESP: "..argusBoolText(_G.ESPEnabled).." | Box: "..argusBoolText(_G.BoxESP).." | Skeleton: "..argusBoolText(_G.SkeletonESP).." | Highlight: "..argusBoolText(_G.HighlightESP))
+        argusSetLiveText("debug_rate", string.format("ESP rate: %.0f / %.0f Hz", tonumber(_G.ArgusESPUpdateRate) or 60, effectiveRate))
+        argusSetLiveText("debug_cache", string.format("Cache: %.0f ms | LOS cache: %.0f ms", (tonumber(_G.ArgusTargetCacheLifetime) or 0.08) * 1000, (tonumber(_G.ArgusLOSCacheLifetime) or 0.055) * 1000))
+        argusSetLiveText("debug_api1", "Drawing: "..argusBoolText(drawingAvailable).." | loadstring: "..argusBoolText(type(loadstring) == "function").." | HttpGet: "..argusBoolText(httpGetAvailable))
+        argusSetLiveText("debug_api2", "request: "..argusBoolText(requestAvailable).." | gethui: "..argusBoolText(type(gethui) == "function").." | API calls: uninstrumented")
+        argusSetLiveText("debug_health", "Tracked errors: "..tostring(trackedErrors).." | Watchdog: "..argusBoolText(_G.ArgusStateWatchdog).." | Fail-safe: "..argusBoolText(_G.ArgusFailSafe))
+        argusSetLiveText("debug_humanized", "Humanized: "..argusBoolText(_G.TargetAssistHumanizedAim).." | Prediction: "..argusBoolText(_G.TargetAssistPredictionEnabled))
     end
 end
 
@@ -2118,28 +2160,39 @@ local function argusRebuildBody()
         argusText("UI toggle uses RightControl to avoid the existing RightShift visual hide.", x, y+155, 10, Color3.fromRGB(150,150,150))
 
     elseif ArgusUI.Tab == "Debug" then
-        argusText("DEBUG / DIAGNOSTICS", x, y, 11, Color3.fromRGB(170,170,170))
-        argusMakeButton("Debug Mode: "..argusBoolText(_G.ArgusDebugMode), x, y+25, w, 30, function()
+        argusText("DEBUG / SYSTEM HEALTH", x, y, 11, Color3.fromRGB(110,220,140))
+        argusMakeButton("Debug Mode: "..argusBoolText(_G.ArgusDebugMode), x, y+22, w, 28, function()
             _G.ArgusDebugMode=not _G.ArgusDebugMode
             argusToast("Debug Mode "..argusBoolText(_G.ArgusDebugMode))
             argusRebuildBody()
         end)
-        local status,target=argusGetTargetStatus()
-        local char=target and target.Character
-        local root=char and char:FindFirstChild("HumanoidRootPart")
-        local localChar=LocalPlayer.Character
-        local localRoot=localChar and localChar:FindFirstChild("HumanoidRootPart")
-        local distance=root and localRoot and (root.Position-localRoot.Position).Magnitude or 0
-        argusText("Target State: "..status, x, y+68, 13, argusStatusColor(status))
-        argusLiveText("debug_target", "Target: "..(target and target.Name or "None"), x, y+92, 12)
-        argusLiveText("debug_distance", string.format("Distance: %.1f",distance), x, y+115, 12)
-        argusLiveText("debug_fov", "FOV: "..tostring(_G.TargetAssistFOVRadius), x, y+138, 12)
-        argusLiveText("debug_los", "LOS: "..argusBoolText(target and target.Character and hasLineOfSight(getTargetPart(target.Character)) or false), x, y+161, 12)
-        argusLiveText("debug_selection", "Selection: ".._G.ArgusTargetSelectionMode, x, y+184, 12)
-        argusLiveText("debug_perf", "ESP Performance: "..argusBoolText(_G.ArgusESPPerformance), x, y+207, 12)
-        argusLiveText("debug_rate", "Update Rate: "..tostring(_G.ArgusESPUpdateRate), x, y+230, 12)
-        argusLiveText("debug_humanized", "Humanized: "..argusBoolText(_G.TargetAssistHumanizedAim), x, y+253, 12)
-        argusText("No gameplay state is changed by Debug Mode.", x, y+285, 10, Color3.fromRGB(150,150,150))
+
+        -- Compact grouped telemetry inspired by modular dashboard/inspector patterns
+        -- in StarGaze, VeloraUI, Sleek and Roblox ImGui examples. Uses the existing
+        -- Drawing backend and theme; no third-party UI library or remote dependency.
+        argusText("SYSTEM / INPUT", x, y+59, 10, Color3.fromRGB(110,220,140))
+        argusLiveText("debug_runtime", "Runtime: starting...", x, y+78, 11)
+        argusLiveText("debug_fps", "FPS: -- | Frame: -- ms | Tier: --", x, y+98, 11)
+        argusLiveText("debug_input", "Input: checking... | RMB: --", x, y+118, 11)
+        argusLiveText("debug_player", "Players: -- | Character: --", x, y+138, 11)
+        argusLiveText("debug_backend", "Backend: -- | View: --", x, y+158, 11)
+
+        argusText("TARGET / VISUALS", x, y+184, 10, Color3.fromRGB(110,220,140))
+        argusLiveText("debug_target", "Target: -- | State: --", x, y+203, 11)
+        argusLiveText("debug_distance", "Distance: -- | Part: --", x, y+223, 11)
+        argusLiveText("debug_los", "Visibility: -- | FOV: --", x, y+243, 11)
+        argusLiveText("debug_activation", "Activation: -- | Feature: -- | RMB: --", x, y+263, 11)
+        argusLiveText("debug_selection", "Selection: -- | Cache: --", x, y+283, 11)
+        argusLiveText("debug_visuals", "ESP: -- | Box: -- | Skeleton: -- | Highlight: --", x, y+303, 11)
+        argusLiveText("debug_rate", "ESP rate: -- / -- Hz", x, y+323, 11)
+        argusLiveText("debug_cache", "Cache: -- ms | LOS cache: -- ms", x, y+343, 11)
+
+        argusText("API / RECOVERY", x, y+369, 10, Color3.fromRGB(110,220,140))
+        argusLiveText("debug_api1", "Drawing: -- | loadstring: -- | HttpGet: --", x, y+388, 11)
+        argusLiveText("debug_api2", "request: -- | gethui: -- | API calls: --", x, y+408, 11)
+        argusLiveText("debug_health", "Tracked errors: -- | Watchdog: -- | Fail-safe: --", x, y+428, 11)
+        argusLiveText("debug_humanized", "Humanized: -- | Prediction: --", x, y+448, 11)
+        argusText("Telemetry refresh: 250 ms. N/A means no central error/API hook is installed.", x, y+472, 9, Color3.fromRGB(150,150,150))
     end
 
     argusRenderSliders()
