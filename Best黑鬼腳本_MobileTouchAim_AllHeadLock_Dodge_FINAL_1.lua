@@ -323,7 +323,12 @@ end
 local function createSkeleton(esp, isR6)
     local bones = isR6 and BonesR6 or BonesR15
     for i = 1,#bones do
-        esp.Skeleton[i] = newLine()
+        local line = newLine()
+        -- Skeleton style only: thin, plain green Drawing lines without an outline.
+        line.Thickness = 1
+        line.Color = Color3.fromRGB(0, 255, 0)
+        pcall(function() line.Outline = false end)
+        esp.Skeleton[i] = line
     end
 end
 
@@ -606,8 +611,10 @@ end
                     if o1 and o2 then
                         esp.Skeleton[i].From = Vector2.new(v1.X,v1.Y)
                         esp.Skeleton[i].To   = Vector2.new(v2.X,v2.Y)
-                        esp.Skeleton[i].Visible = true
+                        esp.Skeleton[i].Thickness = 1
                         esp.Skeleton[i].Color = Color3.fromRGB(0, 255, 0)
+                        pcall(function() esp.Skeleton[i].Outline = false end)
+                        esp.Skeleton[i].Visible = true
                     else
                         esp.Skeleton[i].Visible = false
                     end
