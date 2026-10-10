@@ -3136,21 +3136,35 @@ local function argusCreateMobileUI()
     local reopen=Instance.new("TextButton")
     reopen.Name="ArgusFPSPanel"
     reopen.Text="FPS: --"
-    reopen.TextColor3=Color3.fromRGB(255,255,255)
+    reopen.TextColor3=ArgusUITheme.Text
     reopen.TextSize=12
     reopen.Font=Enum.Font.GothamBold
-    reopen.BackgroundColor3=Color3.fromRGB(10,10,10)
-    reopen.BorderColor3=Color3.fromRGB(210,210,210)
+    reopen.BackgroundColor3=ArgusUITheme.Panel
+    reopen.BorderColor3=ArgusUITheme.Border
+    reopen.AutoButtonColor=false
     reopen.Size=UDim2.fromOffset(112,36)
     reopen.AnchorPoint=Vector2.new(1,0)
     -- Top-right FPS panel stays below the Roblox mobile top bar / safe area.
     reopen.Position=UDim2.new(1,-12,0,12)
     reopen.Visible=true
     reopen.Parent=gui
-    mobileCorner(reopen, 10)
-    mobileStroke(reopen, ArgusUITheme.Accent, 0.05, 1.2)
+    mobileCorner(reopen, 14)
+    mobileStroke(reopen, ArgusUITheme.Accent, 0.02, 1.5)
+    local reopenGradient = Instance.new("UIGradient")
+    reopenGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 43, 57)),
+        ColorSequenceKeypoint.new(1, ArgusUITheme.Panel),
+    })
+    reopenGradient.Rotation = 35
+    reopenGradient.Parent = reopen
     ArgusMobile.Reopen=reopen
     ArgusMobile.FPSPanel=reopen
+    reopen.MouseEnter:Connect(function()
+        mobileTween(reopen, 0.12, {BackgroundColor3 = ArgusUITheme.SurfaceHover})
+    end)
+    reopen.MouseLeave:Connect(function()
+        mobileTween(reopen, 0.12, {BackgroundColor3 = ArgusUITheme.Panel})
+    end)
     reopen.Activated:Connect(function()
         ArgusMobile.Visible=true
         reopen.Visible=false
