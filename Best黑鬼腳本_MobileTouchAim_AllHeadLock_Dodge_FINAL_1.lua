@@ -3060,6 +3060,24 @@ local function argusCreateMobileUI()
     privacyText.TextWrapped=true
     privacyText.ZIndex=1001
     privacyText.Parent=privacyCurtain
+
+    local privacyDismiss=Instance.new("TextButton")
+    privacyDismiss.Name="DismissPrivacyCurtain"
+    privacyDismiss.AnchorPoint=Vector2.new(0.5,0.5)
+    privacyDismiss.Position=UDim2.fromScale(0.5,0.58)
+    privacyDismiss.Size=UDim2.fromOffset(180,42)
+    privacyDismiss.BackgroundColor3=Color3.fromRGB(20,35,48)
+    privacyDismiss.BorderSizePixel=0
+    privacyDismiss.Font=Enum.Font.GothamSemibold
+    privacyDismiss.Text="RESUME GAME"
+    privacyDismiss.TextColor3=Color3.fromRGB(248,251,255)
+    privacyDismiss.TextSize=14
+    privacyDismiss.ZIndex=1002
+    privacyDismiss.Parent=privacyCurtain
+    privacyDismiss.Activated:Connect(function()
+        _G.ArgusPrivacyCurtain = false
+        privacyCurtain.Visible = false
+    end)
     ArgusMobile.PrivacyCurtain=privacyCurtain
 
     local frame=Instance.new("Frame")
