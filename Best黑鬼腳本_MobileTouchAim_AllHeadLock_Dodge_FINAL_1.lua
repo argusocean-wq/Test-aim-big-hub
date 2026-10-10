@@ -1651,7 +1651,7 @@ _G.ArgusWeightDistance = 0.35
 _G.ArgusWeightHealth = 0.15
 _G.ArgusWeightCustom = 0.0
 _G.ArgusProfile = "Default"
-_G.ArgusUIAccent = Color3.fromRGB(220, 220, 220)
+_G.ArgusUIAccent = Color3.fromRGB(174, 224, 255)
 
 local ArgusUI = {
     Open = false,
@@ -2506,7 +2506,7 @@ local ArgusUITheme = {
     Surface = Color3.fromRGB(24, 24, 24),
     SurfaceHover = Color3.fromRGB(42, 42, 42),
     Border = Color3.fromRGB(82, 82, 82),
-    Accent = Color3.fromRGB(220, 220, 220),
+    Accent = Color3.fromRGB(174, 224, 255),
     Text = Color3.fromRGB(242, 242, 242),
     Muted = Color3.fromRGB(170, 170, 170),
 }
