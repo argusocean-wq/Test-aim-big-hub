@@ -3017,6 +3017,16 @@ local function argusCreateMobileUI()
     })
     headerGradient.Rotation = 0
     headerGradient.Parent = title
+    -- Animate the monochrome gradient without introducing any hue colors.
+    local gradientTween = TweenService:Create(
+        headerGradient,
+        TweenInfo.new(10, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1),
+        {Rotation = 360}
+    )
+    gradientTween:Play()
+    title.Destroying:Connect(function()
+        gradientTween:Cancel()
+    end)
 
     local padding=Instance.new("UIPadding")
     padding.PaddingLeft=UDim.new(0,14)
