@@ -18,13 +18,18 @@ This is a record of the owner's stated context, not an independent legal determi
 - Prefer focused, reversible changes; verify GitHub read-back after writes.
 - Do not claim Luau syntax or runtime tests passed unless they were actually run in a compatible environment.
 
-## Entry point
+## Product name and entry points
 
-The current Raw entrypoint is:
+- User-facing product name: **Crescent Hub**.
+- Canonical Raw entrypoint: `https://raw.githubusercontent.com/argusocean-wq/Test-aim-big-hub/main/CrescentHub.lua`.
+- Legacy compatibility path remains available: `https://raw.githubusercontent.com/argusocean-wq/Test-aim-big-hub/main/Best黑鬼腳本_MobileTouchAim_AllHeadLock_Dodge_FINAL_1.lua`. Keep its content aligned with the canonical entrypoint unless the owner explicitly asks to retire it.
+- The reference `loading.lua` now points to `CrescentHub.lua`; this does not automatically replace a separately hosted/external copy of the loader.
 
-`https://raw.githubusercontent.com/argusocean-wq/Test-aim-big-hub/main/Best黑鬼腳本_MobileTouchAim_AllHeadLock_Dodge_FINAL_1.lua`
+## Monochrome UI rules
 
-The external loader is not embedded in the main Lua file. `loading.lua` in this repository is a hardened reference implementation; it does not automatically replace a separately hosted/external copy of the loader.
+- UI chrome must use black, white, and grayscale only.
+- Grayscale accents and gradients may animate, but must not introduce colored hues.
+- Gameplay overlay colors are separate from UI chrome; do not change ESP/skeleton colors merely to enforce the UI palette.
 
 
 ## Crescent Hub branding (2026-10-09)
