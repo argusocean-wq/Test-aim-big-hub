@@ -2508,13 +2508,38 @@ local TweenService = game:GetService("TweenService")
 -- Crescent Hub palette: ice blue, black, and white, based on the supplied reference.
 -- Gameplay overlay colors are intentionally kept separate from UI chrome.
 local ArgusUITheme = {
-    Panel = Color3.fromRGB(7, 9, 13),
-    Surface = Color3.fromRGB(17, 21, 27),
-    SurfaceHover = Color3.fromRGB(30, 42, 52),
+    Panel = Color3.fromRGB(5, 7, 12),
+    Surface = Color3.fromRGB(13, 19, 28),
+    SurfaceHover = Color3.fromRGB(25, 45, 61),
     Border = Color3.fromRGB(93, 142, 165),
     Accent = Color3.fromRGB(174, 224, 255),
     Text = Color3.fromRGB(248, 251, 255),
     Muted = Color3.fromRGB(174, 190, 201),
+    GradientDark = Color3.fromRGB(5, 8, 14),
+    GradientMid = Color3.fromRGB(18, 43, 59),
+    GradientBright = Color3.fromRGB(174, 224, 255),
+    GradientWhite = Color3.fromRGB(248, 251, 255),
+}
+ 
+local function mobileGradient(object, colors, rotation)
+    local gradient = object:FindFirstChildOfClass("UIGradient")
+    if not gradient then
+        gradient = Instance.new("UIGradient")
+        gradient.Parent = object
+    end
+    gradient.Color = ColorSequence.new(colors)
+    gradient.Rotation = rotation or 0
+    return gradient
+end
+
+local function mobileApplyPanelGradient(object, rotation)
+    return mobileGradient(object, {
+        ColorSequenceKeypoint.new(0, ArgusUITheme.GradientMid),
+        ColorSequenceKeypoint.new(0.42, ArgusUITheme.Surface),
+        ColorSequenceKeypoint.new(0.48, ArgusUITheme.GradientDark),
+        ColorSequenceKeypoint.new(0.58, ArgusUITheme.Panel),
+        ColorSequenceKeypoint.new(1, ArgusUITheme.Panel),
+    }, rotation or 0)
 }
 
 local function mobileCorner(object, radius)
@@ -2929,9 +2954,11 @@ local function argusCreateMobileUI()
     frame.BackgroundColor3=ArgusUITheme.Panel
     frame.BorderSizePixel=0
     frame.Visible=false
+    frame.ClipsDescendants=true
     frame.Parent=gui
-    mobileCorner(frame, 14)
-    mobileStroke(frame, ArgusUITheme.Border, 0.05, 1.2)
+    mobileCorner(frame, 16)
+    mobileStroke(frame, ArgusUITheme.Border, 0.04, 1.35)
+    mobileApplyPanelGradient(frame, 35)
     ArgusMobile.Frame=frame
 
     local panelScale = Instance.new("UIScale")
@@ -3009,28 +3036,34 @@ local function argusCreateMobileUI()
     title.BorderSizePixel=0
     title.Size=UDim2.new(1,0,0,46)
     title.Text="CRESCENT HUB  /  "..tostring(_G.ArgusDeviceType)
-    title.TextColor3=Color3.fromRGB(255,255,255)
+    title.TextColor3=ArgusUITheme.Text
     title.TextSize=16
     title.Font=Enum.Font.GothamBold
     title.TextXAlignment=Enum.TextXAlignment.Left
     title.AutoButtonColor=false
     title.Parent=frame
     mobileCorner(title, 12)
-    local headerGradient = Instance.new("UIGradient")
-    headerGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(26, 56, 73)),
-        ColorSequenceKeypoint.new(1, ArgusUITheme.Surface),
-    })
-    headerGradient.Rotation = 0
-    headerGradient.Parent = title
+    mobileGradient(title, {
+        ColorSequenceKeypoint.new(0, ArgusUITheme.GradientBright),
+        ColorSequenceKeypoint.new(0.08, ArgusUITheme.GradientMid),
+        ColorSequenceKeypoint.new(0.44, ArgusUITheme.Surface),
+        ColorSequenceKeypoint.new(0.5, ArgusUITheme.GradientDark),
+        ColorSequenceKeypoint.new(1, ArgusUITheme.Panel),
+    }, 0)
 
     local padding=Instance.new("UIPadding")
     padding.PaddingLeft=UDim.new(0,14)
     padding.Parent=title
 
     local tabs=Instance.new("ScrollingFrame")
-    tabs.BackgroundColor3=Color3.fromRGB(12,12,12)
+    tabs.BackgroundColor3=ArgusUITheme.Panel
     tabs.BorderSizePixel=0
+    mobileGradient(tabs, {
+        ColorSequenceKeypoint.new(0, ArgusUITheme.Surface),
+        ColorSequenceKeypoint.new(0.46, ArgusUITheme.GradientDark),
+        ColorSequenceKeypoint.new(0.54, ArgusUITheme.Panel),
+        ColorSequenceKeypoint.new(1, ArgusUITheme.Panel),
+    }, 0)
     tabs.Position=UDim2.fromOffset(0,46)
     tabs.Size=UDim2.new(1,0,0,42)
     tabs.ScrollBarThickness=2
@@ -3082,6 +3115,13 @@ local function argusCreateMobileUI()
     scroll.Size=UDim2.new(1,-20,1,-104)
     scroll.BackgroundColor3=ArgusUITheme.Panel
     scroll.BorderSizePixel=0
+    mobileGradient(scroll, {
+        ColorSequenceKeypoint.new(0, ArgusUITheme.Surface),
+        ColorSequenceKeypoint.new(0.18, ArgusUITheme.Panel),
+        ColorSequenceKeypoint.new(0.48, ArgusUITheme.GradientDark),
+        ColorSequenceKeypoint.new(0.54, ArgusUITheme.Panel),
+        ColorSequenceKeypoint.new(1, ArgusUITheme.Panel),
+    }, 90)
     scroll.ScrollBarThickness=5
     scroll.AutomaticCanvasSize=Enum.AutomaticSize.Y
     scroll.CanvasSize=UDim2.new()
@@ -3141,6 +3181,12 @@ local function argusCreateMobileUI()
     reopen.Font=Enum.Font.GothamBold
     reopen.BackgroundColor3=ArgusUITheme.Panel
     reopen.BorderColor3=ArgusUITheme.Border
+    mobileGradient(reopen, {
+        ColorSequenceKeypoint.new(0, ArgusUITheme.GradientMid),
+        ColorSequenceKeypoint.new(0.45, ArgusUITheme.Surface),
+        ColorSequenceKeypoint.new(0.52, ArgusUITheme.GradientDark),
+        ColorSequenceKeypoint.new(1, ArgusUITheme.Panel),
+    }, 25)
     reopen.AutoButtonColor=false
     reopen.Size=UDim2.fromOffset(112,36)
     reopen.AnchorPoint=Vector2.new(1,0)
