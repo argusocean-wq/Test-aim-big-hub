@@ -95,9 +95,10 @@ local function argusCreateNativeDrawingBackend()
 
         if kind == "Text" then
             instance.TextColor3 = color
-            instance.TextTransparency = 1 - transparency
-            instance.TextStrokeTransparency = props.Outline and (1 - transparency) or 1
+            -- Keep text outline opt-in; disable stroke by default for a clean sans-serif UI.
+            instance.TextStrokeTransparency = props.Outline == true and (1 - transparency) or 1
             instance.TextStrokeColor3 = props.OutlineColor or Color3.new(0,0,0)
+            instance.TextTransparency = 1 - transparency
             instance.TextSize = math.max(1, tonumber(props.Size) or 14)
             instance.Font = Enum.Font.Gotham
             instance.Text = tostring(props.Text or "")
@@ -310,6 +311,9 @@ local function newLine()
     local ln = Drawing.new("Line")
     ln.Thickness = 2
     ln.Visible = false
+    -- Skeleton lines must stay plain green without a dark outline.
+    pcall(function() ln.Outline = false end)
+    pcall(function() ln.OutlineColor = Color3.fromRGB(0, 255, 0) end)
     return ln
 end
 local function newText()
@@ -659,6 +663,7 @@ end
                         esp.Skeleton[i].Thickness = 1
                         esp.Skeleton[i].Color = Color3.fromRGB(0, 255, 0)
                         pcall(function() esp.Skeleton[i].Outline = false end)
+                        pcall(function() esp.Skeleton[i].OutlineColor = Color3.fromRGB(0, 255, 0) end)
                         esp.Skeleton[i].Visible = true
                     else
                         esp.Skeleton[i].Visible = false
