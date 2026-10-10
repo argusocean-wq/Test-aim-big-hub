@@ -1203,83 +1203,14 @@ local function getBestTarget()
     return bestPlayer, bestScore
 end
 
-local MobileTouchState = {
-    Active = false,
-    Touches = {},
-}
-
-_G.ArgusMobileAimRegion = _G.ArgusMobileAimRegion or "RightHalf"
-_G.ArgusMobileAimTouchMinX = tonumber(_G.ArgusMobileAimTouchMinX) or 0.45
-_G.ArgusMobileAimActivationMode = "ScreenHold"
-
-local function isMobileAimTouchAllowed(position)
-    if not position then return false end
-    if _G.ArgusMobileAimRegion == "FullScreen" then return true end
-    local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
-    local minX = math.clamp(tonumber(_G.ArgusMobileAimTouchMinX) or 0.45,0,0.9)
-    return position.X >= viewport.X * minX
-end
-
-local function isMobileTouchMode()
-    local deviceType = _G.ArgusDeviceType or "Desktop"
-    local source = _G.ArgusInputSource or "Auto"
-    return UserInputService.TouchEnabled
-        and (deviceType == "Mobile" or source == "Touch" or (source == "Auto" and deviceType == "Hybrid"))
-end
-
-local function isTouchOnMobileUI(position)
-    -- 只攔截真正可互動的遊戲 UI，避免 ESP/裝飾用透明 GuiObject 阻擋瞄準觸控。
-    local ok, objects = pcall(function()
-        return game:GetService("GuiService"):GetGuiObjectsAtPosition(position.X, position.Y)
-    end)
-    if not ok or not objects then return false end
-
-    for _, object in ipairs(objects) do
-        if object and object:IsA("GuiObject") and object.Visible then
-            if object.Active
-                or object:IsA("GuiButton")
-                or object:IsA("TextBox")
-                or object:IsA("ScrollingFrame") then
-                return true
-            end
-        end
-    end
-    return false
-end
-
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    -- HoldButton 模式只由專用按鈕啟動；ScreenHold 是可選的舊式觸控模式。
-    if input.UserInputType == Enum.UserInputType.Touch and isMobileTouchMode() then
-        if _G.ArgusMobileAimActivationMode == "ScreenHold"
-            and not isTouchOnMobileUI(input.Position)
-            and isMobileAimTouchAllowed(input.Position) then
-            MobileTouchState.Touches[input] = true
-            MobileTouchState.Active = true
-            _G.ArgusMobileAimActive = true
-        end
-        return
-    end
-
     if gameProcessed then return end
-
     if input.KeyCode == Enum.KeyCode.RightShift then
         _G.TargetAssistVisualsHidden = not _G.TargetAssistVisualsHidden
         return
     end
-
     if input.KeyCode == _G.TargetAssistToggleKey then
         TargetAssist.ToggleState = not TargetAssist.ToggleState
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType ~= Enum.UserInputType.Touch then return end
-    if not isMobileTouchMode() then return end
-
-    MobileTouchState.Touches[input] = nil
-    if _G.ArgusMobileAimActivationMode == "ScreenHold" then
-        MobileTouchState.Active = next(MobileTouchState.Touches) ~= nil
-        _G.ArgusMobileAimActive = MobileTouchState.Active
     end
 end)
 
@@ -1539,14 +1470,6 @@ local function updateTargetAssist(dt)
     end
     local predictedPosition
 
-    -- 手機專用強度：Aimbot 開啟即為強鎖，滑桿只調整跟隨力度。
-    if isMobileTouchMode() then
-        local strength = math.clamp(tonumber(_G.MobileAimStrength) or 100, 0, 100) / 100
-        -- 0% 保留極低跟隨，100% 接近直接鎖定。
-        local mobileSmooth = 0.35 + strength * 35
-        smoothness = math.max(smoothness, mobileSmooth)
-    end
-
     if _G.TargetAssistSecondaryLock then
         local elapsed = now - (TargetAssist.LockStartedAt or now)
         local delay = math.max(0, tonumber(_G.TargetAssistSecondaryDelay) or 0.10)
@@ -1568,57 +1491,7 @@ local function updateTargetAssist(dt)
         predictedPosition = getPredictedPosition(targetPart)
     end
 
-    -- 手機鎖頭完整狀態機：Body -> Head Candidate -> Head Lock -> Grace -> Reacquire。
-    if isMobileTouchMode() then
-        local headInfo = getMobileHeadLockInfo(character, screenCenter)
-        local headStrength = math.clamp(tonumber(_G.MobileHeadLockStrength) or 100, 0, 100) / 100
-        local nowHead = os.clock()
-        local qualified = headInfo and headInfo.Qualified and headStrength > 0
-        local grace = math.max(0, tonumber(_G.MobileHeadLockGrace) or 0.12)
-        local reacquireDelay = math.max(0, tonumber(_G.MobileHeadLockReacquireDelay) or 0.08)
-        local switchMargin = math.clamp(tonumber(_G.MobileHeadLockSwitchMargin) or 0.10, 0, 1)
-
-        if qualified then
-            local betterEnough = TargetAssist.LastHeadScore == math.huge
-                or headInfo.Score >= TargetAssist.LastHeadScore * (1 - switchMargin)
-            if TargetAssist.HeadState == "Body" or TargetAssist.HeadState == "HeadCandidate" then
-                TargetAssist.HeadState = "HeadLock"
-                TargetAssist.HeadLockStartedAt = nowHead
-            elseif TargetAssist.HeadState == "HeadGrace" and nowHead >= TargetAssist.HeadReacquireAt then
-                TargetAssist.HeadState = "HeadLock"
-            end
-            if betterEnough then
-                TargetAssist.LastHeadScore = headInfo.Score
-            end
-            TargetAssist.HeadLostAt = 0
-        elseif TargetAssist.HeadState == "HeadLock" then
-            TargetAssist.HeadState = "HeadGrace"
-            TargetAssist.HeadLostAt = nowHead
-            TargetAssist.HeadReacquireAt = nowHead + reacquireDelay
-        elseif TargetAssist.HeadState == "HeadGrace" then
-            if nowHead - TargetAssist.HeadLostAt > grace then
-                TargetAssist.HeadState = "Body"
-                TargetAssist.LastHeadScore = math.huge
-            end
-        end
-
-        if TargetAssist.HeadState == "HeadLock" and headInfo then
-            local headPosition = getPredictedPosition(headInfo.Part)
-            local bodyPosition = getPredictedPosition(headInfo.Body)
-            predictedPosition = bodyPosition:Lerp(headPosition, headStrength)
-        elseif TargetAssist.HeadState == "HeadGrace" and headInfo then
-            local headPosition = getPredictedPosition(headInfo.Part)
-            local bodyPosition = getPredictedPosition(headInfo.Body)
-            local graceAlpha = math.clamp(1 - ((nowHead - TargetAssist.HeadLostAt) / math.max(grace, 0.001)), 0, 1)
-            predictedPosition = bodyPosition:Lerp(headPosition, headStrength * graceAlpha)
-        else
-            local body = character:FindFirstChild("UpperTorso")
-                or character:FindFirstChild("Torso")
-                or character:FindFirstChild("HumanoidRootPart")
-            if body then predictedPosition = getPredictedPosition(body) end
-        end
-        _G.MobileHeadLockState = TargetAssist.HeadState
-    end
+    -- Desktop-only: follow the configured target part without touch-specific state.
 
     predictedPosition += getHumanizedOffset(dt)
     local targetCFrame = CFrame.lookAt(cameraPosition, predictedPosition)
@@ -2505,7 +2378,6 @@ argusToast("Crescent Hub ready")
 -- ARGUS DEVICE DETECTION / FULL MOBILE UI
 -- =========================================================
 local ArgusDevice = {
-    IsTouch = UserInputService.TouchEnabled,
     HasKeyboard = UserInputService.KeyboardEnabled,
     HasMouse = UserInputService.MouseEnabled,
 }
@@ -3627,7 +3499,6 @@ local function finalValidate()
     _G.ArgusTargetSearchInterval = finalSafeNumber(_G.ArgusTargetSearchInterval,0.035,0.01,0.25)
     _G.ArgusESPMinUpdateRate = finalSafeNumber(_G.ArgusESPMinUpdateRate,20,10,60)
     _G.ArgusESPMaxUpdateRate = finalSafeNumber(_G.ArgusESPMaxUpdateRate,60,20,120)
-    _G.ArgusTouchMinHold = finalSafeNumber(_G.ArgusTouchMinHold,0.045,0,0.5)
     if _G.ArgusESPMinUpdateRate > _G.ArgusESPMaxUpdateRate then
         _G.ArgusESPMinUpdateRate, _G.ArgusESPMaxUpdateRate = _G.ArgusESPMaxUpdateRate, _G.ArgusESPMinUpdateRate
     end
