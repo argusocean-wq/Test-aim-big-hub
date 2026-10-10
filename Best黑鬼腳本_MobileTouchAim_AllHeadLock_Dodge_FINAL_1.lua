@@ -1,4 +1,6 @@
 -- ARGUS
+-- Release baseline: the project owner requested versioning to start at v0.0.01.
+_G.ArgusVersion = "v0.0.01"
 _G.ESPEnabled   = true
 _G.BoxESP       = true
 _G.BoxFilled    = true
@@ -2559,12 +2561,36 @@ local function mobileStroke(object, color, transparency, thickness)
     return stroke
 end
 
+-- Keep at most one active UI tween per instance. Replacing an animation cancels the old
+-- one first, preventing rapid input from leaving competing tweens behind.
+local ArgusActiveTweens = setmetatable({}, {__mode = "k"})
 local function mobileTween(object, duration, properties, style)
-    local tween = TweenService:Create(
-        object,
-        TweenInfo.new(duration or 0.16, style or Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-        properties
-    )
+    if not object or not object.Parent then return nil end
+    local previous = ArgusActiveTweens[object]
+    if previous then
+        pcall(function() previous:Cancel() end)
+        ArgusActiveTweens[object] = nil
+    end
+
+    local tweenDuration = math.max(0, tonumber(duration) or 0.16)
+    if _G.ArgusLowEffects == true then tweenDuration = math.min(tweenDuration, 0.025) end
+    local ok, tween = pcall(function()
+        return TweenService:Create(
+            object,
+            TweenInfo.new(tweenDuration, style or Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            properties
+        )
+    end)
+    if not ok or not tween then return nil end
+
+    ArgusActiveTweens[object] = tween
+    local completedConnection
+    completedConnection = tween.Completed:Connect(function()
+        if completedConnection then completedConnection:Disconnect() end
+        if ArgusActiveTweens[object] == tween then
+            ArgusActiveTweens[object] = nil
+        end
+    end)
     tween:Play()
     return tween
 end
@@ -3862,8 +3888,14 @@ if _G.ArgusMobileUIEnabled then
                 or (ArgusUI and tonumber(ArgusUI.FPS))
                 or 0
             if ArgusMobile.FPSPanel and ArgusMobile.FPSPanel.Parent then
-                ArgusMobile.FPSPanel.Text = string.format("FPS: %.0f", fps)
-                ArgusMobile.FPSPanel.Visible = not (ArgusMobile.Frame and ArgusMobile.Frame.Visible)
+                local fpsText = string.format("FPS: %.0f", fps)
+                if ArgusMobile.FPSPanel.Text ~= fpsText then
+                    ArgusMobile.FPSPanel.Text = fpsText
+                end
+                local shouldShowFPS = not (ArgusMobile.Frame and ArgusMobile.Frame.Visible)
+                if ArgusMobile.FPSPanel.Visible ~= shouldShowFPS then
+                    ArgusMobile.FPSPanel.Visible = shouldShowFPS
+                end
             end
             if ArgusMobile.Frame and ArgusMobile.Frame.Visible then
                 local status=argusGetTargetStatus()
