@@ -224,6 +224,11 @@ local function argusCreateNativeDrawingBackend()
                 return self._props[key]
             end,
             __newindex = function(self, key, value)
+                -- Skip redundant property writes: the UI/ESP loops assign many
+                -- unchanged values every frame, especially on the native mobile backend.
+                if self._props[key] == value then
+                    return
+                end
                 self._props[key] = value
                 update(self)
             end,
