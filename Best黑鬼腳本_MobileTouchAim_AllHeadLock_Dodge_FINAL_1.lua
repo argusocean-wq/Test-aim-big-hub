@@ -2588,29 +2588,45 @@ local function mobileButton(parent, text, callback, height)
     b.Size = UDim2.new(1,0,0,height or 38)
     b.AutoButtonColor = false
     b.Parent = parent
-    mobileCorner(b, 8)
-    local outline = mobileStroke(b, ArgusUITheme.Border, 0.25, 1)
+    mobileCorner(b, 10)
+    local outline = mobileStroke(b, ArgusUITheme.Border, 0.28, 1)
+    local buttonScale = Instance.new("UIScale")
+    buttonScale.Scale = 1
+    buttonScale.Parent = b
+
+    -- Mouse hover and touch press feedback share the same subtle ice-blue language.
     b.MouseEnter:Connect(function()
         mobileTween(b, 0.14, {BackgroundColor3 = ArgusUITheme.SurfaceHover})
-        mobileTween(outline, 0.14, {Color = ArgusUITheme.Accent, Transparency = 0.05})
+        mobileTween(outline, 0.14, {Color = ArgusUITheme.Accent, Transparency = 0.04, Thickness = 1.4})
     end)
     b.MouseLeave:Connect(function()
         mobileTween(b, 0.16, {BackgroundColor3 = ArgusUITheme.Surface})
-        mobileTween(outline, 0.16, {Color = ArgusUITheme.Border, Transparency = 0.25})
+        mobileTween(outline, 0.16, {Color = ArgusUITheme.Border, Transparency = 0.28, Thickness = 1})
+        mobileTween(buttonScale, 0.12, {Scale = 1})
     end)
     b.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch
             or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            mobileTween(buttonScale, 0.07, {Scale = 0.975})
             mobileTween(b, 0.08, {BackgroundColor3 = ArgusUITheme.SurfaceHover}, Enum.EasingStyle.Quad)
+            mobileTween(outline, 0.07, {Color = ArgusUITheme.GradientBright, Transparency = 0, Thickness = 1.6})
         end
     end)
     b.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch
             or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            mobileTween(buttonScale, 0.13, {Scale = 1})
             mobileTween(b, 0.12, {BackgroundColor3 = ArgusUITheme.Surface})
+            mobileTween(outline, 0.13, {Color = ArgusUITheme.Accent, Transparency = 0.08, Thickness = 1.2})
         end
     end)
     b.Activated:Connect(function()
+        mobileTween(outline, 0.08, {Color = ArgusUITheme.GradientBright, Transparency = 0})
+        task.delay(0.1, function()
+            if outline.Parent then
+                mobileTween(outline, 0.14, {Color = ArgusUITheme.Border, Transparency = 0.28, Thickness = 1})
+            end
+        end)
         pcall(callback)
     end)
     return b
@@ -3088,9 +3104,37 @@ local function argusCreateMobileUI()
         b.TextSize=11
         b.Text=name
         b.Parent=tabs
-        mobileCorner(b, 8)
-        local tabStroke = mobileStroke(b, (name==ArgusMobile.Tab) and ArgusUITheme.Accent or ArgusUITheme.Border, (name==ArgusMobile.Tab) and 0.05 or 0.5, 1)
+        mobileCorner(b, 10)
+        local tabStroke = mobileStroke(b, (name==ArgusMobile.Tab) and ArgusUITheme.Accent or ArgusUITheme.Border, (name==ArgusMobile.Tab) and 0.04 or 0.5, 1)
+        local tabScale = Instance.new("UIScale")
+        tabScale.Scale = 1
+        tabScale.Parent = b
+        b.MouseEnter:Connect(function()
+            if ArgusMobile.Tab ~= name then
+                mobileTween(b, 0.12, {BackgroundColor3 = ArgusUITheme.SurfaceHover})
+                mobileTween(tabStroke, 0.12, {Color = ArgusUITheme.Accent, Transparency = 0.18, Thickness = 1.25})
+            end
+        end)
+        b.MouseLeave:Connect(function()
+            if ArgusMobile.Tab ~= name then
+                mobileTween(b, 0.14, {BackgroundColor3 = ArgusUITheme.Surface})
+                mobileTween(tabStroke, 0.14, {Color = ArgusUITheme.Border, Transparency = 0.5, Thickness = 1})
+            end
+        end)
+        b.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then
+                mobileTween(tabScale, 0.06, {Scale = 0.96})
+            end
+        end)
+        b.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then
+                mobileTween(tabScale, 0.12, {Scale = 1})
+            end
+        end)
         b.Activated:Connect(function()
+            mobileTween(tabStroke, 0.08, {Color = ArgusUITheme.GradientBright, Transparency = 0})
             ArgusMobile.Tab=name
             argusMobileRebuild()
             for _,other in ipairs(tabs:GetChildren()) do
@@ -3156,7 +3200,18 @@ local function argusCreateMobileUI()
     close.Position=UDim2.new(1,-45,0,2)
     close.Parent=frame
     close.ZIndex=5
+    local closeStroke = mobileStroke(close, ArgusUITheme.Border, 0.55, 1)
+    mobileCorner(close, 10)
+    close.MouseEnter:Connect(function()
+        mobileTween(close, 0.12, {BackgroundTransparency = 0, BackgroundColor3 = ArgusUITheme.SurfaceHover})
+        mobileTween(closeStroke, 0.12, {Color = ArgusUITheme.Accent, Transparency = 0.05})
+    end)
+    close.MouseLeave:Connect(function()
+        mobileTween(close, 0.14, {BackgroundTransparency = 1})
+        mobileTween(closeStroke, 0.14, {Color = ArgusUITheme.Border, Transparency = 0.55})
+    end)
     close.Activated:Connect(function()
+        mobileTween(closeStroke, 0.08, {Color = ArgusUITheme.GradientBright, Transparency = 0})
         ArgusMobile.Visible=false
         if panelTween then panelTween:Cancel() end
         panelTween = mobileTween(panelScale, 0.13, {Scale = 0.94})
