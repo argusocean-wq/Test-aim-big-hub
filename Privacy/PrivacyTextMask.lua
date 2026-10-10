@@ -75,7 +75,7 @@ function PrivacyTextMask.new(screenGui, options)
             return
         end
 
-        if not record then
+        if not record or not record.Overlay then
             local overlay = Instance.new("Frame")
             overlay.Name = self._overlayName
             overlay.BackgroundColor3 = Color3.new(0, 0, 0)
@@ -86,7 +86,8 @@ function PrivacyTextMask.new(screenGui, options)
             overlay.Selectable = false
             overlay.ZIndex = math.max(label.ZIndex + 1, self._zIndex)
             overlay.Parent = parent
-            record = { Overlay = overlay }
+            record = record or {}
+            record.Overlay = overlay
             self._masks[label] = record
         end
 
