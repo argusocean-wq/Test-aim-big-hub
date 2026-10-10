@@ -30,6 +30,6 @@ The external loader is not embedded in the main Lua file. `loading.lua` in this 
 ## Crescent Hub branding (2026-10-09)
 
 - The user-facing product name and UI title are **Crescent Hub**.
-- UI chrome must use black, white, and grayscale only, including animated grayscale accents and monochrome gradients. Do not introduce colored UI accents.
+- UI chrome must use ice blue, black, and white as the primary palette, including animated ice-blue accents and blue-black gradients. Keep supporting text and borders restrained; do not introduce unrelated accent colors.
 - Keep gameplay visual overlay colors separate from UI theme colors unless the owner explicitly requests changing those gameplay visuals.
 - The existing Lua filename and Raw entrypoint URL are intentionally retained for compatibility with already-configured external loaders. Do not rename/migrate the path unless all loader references are deliberately updated together.
