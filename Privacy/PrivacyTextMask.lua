@@ -63,18 +63,14 @@ function PrivacyTextMask.new(screenGui, options)
 
         local record = self._masks[label]
         if not shouldMask then
-            if record then
+            if record and record.Overlay then
                 record.Overlay.Visible = false
             end
             return
         end
 
-        local parent = label.Parent
-        if not parent or not parent:IsA("GuiObject") then
-            -- Use a sibling overlay so it tracks only UI elements in this owned tree.
-            return
-        end
-
+        -- Parent the cover to the text object itself. This avoids sibling overlays
+        -- participating in UIListLayout/UIGridLayout and shifting the original UI.
         if not record or not record.Overlay then
             local overlay = Instance.new("Frame")
             overlay.Name = self._overlayName
@@ -84,22 +80,22 @@ function PrivacyTextMask.new(screenGui, options)
             overlay.Visible = false
             overlay.Active = false
             overlay.Selectable = false
+            overlay.AnchorPoint = Vector2.zero
+            overlay.Position = UDim2.fromScale(0, 0)
+            overlay.Size = UDim2.fromScale(1, 1)
             overlay.ZIndex = math.max(label.ZIndex + 1, self._zIndex)
-            overlay.Parent = parent
+            overlay.Parent = label
             record = record or {}
             record.Overlay = overlay
             self._masks[label] = record
         end
 
         local overlay = record.Overlay
-        if overlay.Parent ~= parent then
-            overlay.Parent = parent
+        if overlay.Parent ~= label then
+            overlay.Parent = label
         end
-        overlay.Position = UDim2.fromOffset(
-            label.AbsolutePosition.X - parent.AbsolutePosition.X,
-            label.AbsolutePosition.Y - parent.AbsolutePosition.Y
-        )
-        overlay.Size = UDim2.fromOffset(label.AbsoluteSize.X, label.AbsoluteSize.Y)
+        overlay.Position = UDim2.fromScale(0, 0)
+        overlay.Size = UDim2.fromScale(1, 1)
         overlay.ZIndex = math.max(label.ZIndex + 1, self._zIndex)
         overlay.Visible = label.Visible and label.AbsoluteSize.X > 0 and label.AbsoluteSize.Y > 0
     end
