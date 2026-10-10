@@ -1794,9 +1794,13 @@ end
 
 local function argusUIAnim(dt)
     local a=ArgusUI.Anim
-    -- Crescent Hub monochrome accent animation: grayscale only (no hue colors).
-    local accentValue = math.floor(185 + 70 * (0.5 + 0.5 * math.sin(os.clock() * 1.2)))
-    _G.ArgusUIAccent = Color3.fromRGB(accentValue, accentValue, accentValue)
+    -- Soft ice-blue pulse; UI accents stay within the blue/black/white palette.
+    local pulse = 0.5 + 0.5 * math.sin(os.clock() * 1.2)
+    _G.ArgusUIAccent = Color3.fromRGB(
+        math.floor(145 + 45 * pulse),
+        math.floor(205 + 25 * pulse),
+        math.floor(238 + 17 * pulse)
+    )
     a.Open=a.Open+(a.TargetOpen-a.Open)*math.clamp(dt*14,0,1)
     a.Alpha=a.Alpha+(a.Open-a.Alpha)*math.clamp(dt*16,0,1)
     local idx=1
@@ -2314,13 +2318,13 @@ RunService.RenderStepped:Connect(function(dt)
 
         ArgusDraw.Panel.Position=Vector2.new(mx+slide,my+slide)
         ArgusDraw.Panel.Size=Vector2.new(ArgusUI.W,ArgusUI.H)
-        ArgusDraw.Panel.Color=Color3.fromRGB(12,12,12)
+        ArgusDraw.Panel.Color=Color3.fromRGB(7,9,13)
         ArgusDraw.Panel.Transparency=alpha
         ArgusDraw.Panel.Visible=alpha>0.01
 
         ArgusDraw.Header.Position=Vector2.new(mx+slide,my+slide)
         ArgusDraw.Header.Size=Vector2.new(ArgusUI.W,48)
-        ArgusDraw.Header.Color=Color3.fromRGB(18,18,18)
+        ArgusDraw.Header.Color=Color3.fromRGB(14,20,27)
         ArgusDraw.Header.Transparency=alpha
         ArgusDraw.Header.Visible=alpha>0.01
 
@@ -2331,7 +2335,7 @@ RunService.RenderStepped:Connect(function(dt)
 
         ArgusDraw.TabLine.Position=Vector2.new(mx+slide,my+70+slide)
         ArgusDraw.TabLine.Size=Vector2.new(ArgusUI.W,1)
-        ArgusDraw.TabLine.Color=Color3.fromRGB(45,45,45)
+        ArgusDraw.TabLine.Color=Color3.fromRGB(44,65,79)
         ArgusDraw.TabLine.Transparency=alpha
         ArgusDraw.TabLine.Visible=alpha>0.01
         local indicatorWidth=ArgusUI.W/#ArgusTabs
@@ -2356,7 +2360,7 @@ RunService.RenderStepped:Connect(function(dt)
             local t=ArgusDraw.TabTexts[tab]
             t.Text=tab
             t.Position=Vector2.new(mx+(i-1)*tabWidth+8+slide,my+54+slide)
-            t.Color=(ArgusUI.Tab==tab) and _G.ArgusUIAccent or Color3.fromRGB(155,155,155)
+            t.Color=(ArgusUI.Tab==tab) and _G.ArgusUIAccent or Color3.fromRGB(174,190,201)
             t.Transparency=alpha
             t.Visible=alpha>0.01
         end
@@ -2501,14 +2505,16 @@ end
 
 -- UI-only motion and styling helpers. Gameplay and external loading remain untouched.
 local TweenService = game:GetService("TweenService")
+-- Crescent Hub palette: ice blue, black, and white, based on the supplied reference.
+-- Gameplay overlay colors are intentionally kept separate from UI chrome.
 local ArgusUITheme = {
-    Panel = Color3.fromRGB(13, 13, 13),
-    Surface = Color3.fromRGB(24, 24, 24),
-    SurfaceHover = Color3.fromRGB(42, 42, 42),
-    Border = Color3.fromRGB(82, 82, 82),
+    Panel = Color3.fromRGB(7, 9, 13),
+    Surface = Color3.fromRGB(17, 21, 27),
+    SurfaceHover = Color3.fromRGB(30, 42, 52),
+    Border = Color3.fromRGB(93, 142, 165),
     Accent = Color3.fromRGB(174, 224, 255),
-    Text = Color3.fromRGB(242, 242, 242),
-    Muted = Color3.fromRGB(170, 170, 170),
+    Text = Color3.fromRGB(248, 251, 255),
+    Muted = Color3.fromRGB(174, 190, 201),
 }
 
 local function mobileCorner(object, radius)
@@ -3012,7 +3018,7 @@ local function argusCreateMobileUI()
     mobileCorner(title, 12)
     local headerGradient = Instance.new("UIGradient")
     headerGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(48, 48, 48)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(26, 56, 73)),
         ColorSequenceKeypoint.new(1, ArgusUITheme.Surface),
     })
     headerGradient.Rotation = 0
