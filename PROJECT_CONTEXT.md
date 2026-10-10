@@ -33,3 +33,11 @@ The external loader is not embedded in the main Lua file. `loading.lua` in this 
 - UI chrome must use ice blue, black, and white as the primary palette, including animated ice-blue accents and blue-black gradients. Keep supporting text and borders restrained; do not introduce unrelated accent colors.
 - Keep gameplay visual overlay colors separate from UI theme colors unless the owner explicitly requests changing those gameplay visuals.
 - The existing Lua filename and Raw entrypoint URL are intentionally retained for compatibility with already-configured external loaders. Do not rename/migrate the path unless all loader references are deliberately updated together.
+
+## Versioning and verification policy (2026-10-10)
+
+- The project version baseline starts at `v0.0.01`; the main Lua entrypoint exposes `_G.ArgusVersion` and displays the version in the control-panel header.
+- Prefer small, reversible commits, with a backup branch before a broad maintenance batch.
+- After each GitHub write, fetch the changed file from `main` and verify the expected markers/content.
+- Distinguish repository read-back and static inspection from Luau parsing, Roblox Studio runtime testing, and device testing. Never report the latter as passed unless they were actually executed.
+- Keep UI lifecycle cleanup explicit for global input connections and ensure UI tweens do not compete on the same instance.
