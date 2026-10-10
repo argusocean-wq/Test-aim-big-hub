@@ -2615,7 +2615,7 @@ local function mobileButton(parent, text, callback, height)
     b.BorderSizePixel = 0
     b.TextColor3 = ArgusUITheme.Text
     b.Font = Enum.Font.GothamSemibold
-    b.TextSize = 13
+    b.TextSize = ArgusUITheme.TextSize.Body
     b.Text = text
     b.Size = UDim2.new(1,0,0,height or 38)
     b.AutoButtonColor = false
@@ -2669,7 +2669,7 @@ local function mobileLabel(parent, text, size, height)
     l.BackgroundTransparency = 1
     l.Size = UDim2.new(1,0,0,height or 28)
     l.Font = Enum.Font.Gotham
-    l.TextSize = size or 12
+    l.TextSize = size or ArgusUITheme.TextSize.Label
     l.TextColor3 = ArgusUITheme.Muted
     l.TextXAlignment = Enum.TextXAlignment.Left
     l.TextWrapped = true
@@ -2909,6 +2909,7 @@ function argusMobileRebuild()
         mobileToggle(ArgusMobile.Content,"Camera Recovery","ArgusCameraRecovery")
         mobileToggle(ArgusMobile.Content,"Fail Safe","ArgusFailSafe")
         mobileToggle(ArgusMobile.Content,"Debug Mode","ArgusDebugMode")
+        mobileToggle(ArgusMobile.Content,"Low Effects / 低特效","ArgusLowEffects")
         mobileLabel(ArgusMobile.Content,"UI / device: "..tostring(_G.ArgusDeviceType),11,28)
         mobileLabel(ArgusMobile.Content,"按住設定的觸控區域啟動瞄準；放開立即停止。",11,34)
         mobileNumber(ArgusMobile.Content,"Aim Touch Start X","ArgusMobileAimTouchMinX",0.25,0.8,0.05)
@@ -3097,7 +3098,7 @@ local function argusCreateMobileUI()
     title.Size=UDim2.new(1,0,0,46)
     title.Text="CRESCENT HUB  /  "..tostring(_G.ArgusDeviceType).."  /  "..tostring(_G.ArgusVersion or "v0.0.01")
     title.TextColor3=ArgusUITheme.Text
-    title.TextSize=16
+    title.TextSize=ArgusUITheme.TextSize.Title
     title.Font=Enum.Font.GothamBold
     title.TextXAlignment=Enum.TextXAlignment.Left
     title.AutoButtonColor=false
@@ -3134,7 +3135,7 @@ local function argusCreateMobileUI()
 
     local tabLayout=Instance.new("UIListLayout")
     tabLayout.FillDirection=Enum.FillDirection.Horizontal
-    tabLayout.Padding=UDim.new(0,4)
+    tabLayout.Padding=UDim.new(0,ArgusUITheme.Spacing.Compact)
     tabLayout.Parent=tabs
 
     local tabNames={"Dashboard","Visuals","Target","Settings","Profiles","Keybinds","Debug"}
@@ -3224,11 +3225,11 @@ local function argusCreateMobileUI()
     ArgusMobile.Content=content
 
     local layout=Instance.new("UIListLayout")
-    layout.Padding=UDim.new(0,6)
+    layout.Padding=UDim.new(0,ArgusUITheme.Spacing.Compact + 2)
     layout.Parent=content
 
     local contentPadding=Instance.new("UIPadding")
-    contentPadding.PaddingTop=UDim.new(0,8)
+    contentPadding.PaddingTop=UDim.new(0,ArgusUITheme.Spacing.Section)
     contentPadding.PaddingBottom=UDim.new(0,12)
     contentPadding.PaddingLeft=UDim.new(0,2)
     contentPadding.PaddingRight=UDim.new(0,2)
