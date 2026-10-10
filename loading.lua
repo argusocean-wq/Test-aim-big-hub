@@ -1,14 +1,14 @@
--- Reference external loader for the Argus private/offline-server project.
+-- Reference external loader for the Crescent Hub private/offline-server project.
 -- Keep executor/API settings and compatibility behavior unchanged.
 -- This file is separate from the main entrypoint and is not called by the main file.
 
-local SOURCE_URL = "https://raw.githubusercontent.com/argusocean-wq/Test-aim-big-hub/main/Best黑鬼腳本_MobileTouchAim_AllHeadLock_Dodge_FINAL_1.lua"
+local SOURCE_URL = "https://raw.githubusercontent.com/argusocean-wq/Test-aim-big-hub/main/CrescentHub.lua"
 local MAX_FETCH_ATTEMPTS = 3
 local MIN_SOURCE_LENGTH = 500
 
 local function report(message)
     if type(warn) == "function" then
-        warn("[Argus Loader] " .. tostring(message))
+        warn("[Crescent Hub Loader] " .. tostring(message))
     end
 end
 
