@@ -1,4 +1,4 @@
-# DOT Protocol — Argus Script Maintenance
+# DOT Protocol — Crescent Hub Script Maintenance
 
 ## Non-negotiable constraints
 
@@ -115,3 +115,13 @@ These are audit targets, not confirmed defects. Each requires a focused code ins
 - Green UI theme tokens were replaced with grayscale values. Gameplay overlay colors (for example, the skeleton visual) remain unchanged because they are not UI chrome.
 - The existing Lua path is retained so previously configured Raw loader URLs continue to work. Do not rename/migrate the path unless loader references are updated together.
 - GitHub write/read-back: PASS. Luau parser and Roblox runtime/device UI tests: NOT RUN.
+
+
+## Crescent Hub branding and monochrome UI
+
+- User-facing product name: **Crescent Hub**. Keep legacy `Argus` identifiers when changing them could break compatibility.
+- Canonical main script: `CrescentHub.lua`.
+- Keep `Best黑鬼腳本_MobileTouchAim_AllHeadLock_Dodge_FINAL_1.lua` as a compatibility path while older Raw loader URLs may still be in use.
+- UI elements, borders, text, accents, and gradients must remain black, white, or grayscale. Animated gradients may change brightness or orientation, but never hue.
+- Gameplay ESP and skeleton overlay colors are not UI chrome and must remain independent of the UI palette.
+- The reference `loading.lua` should load the canonical `CrescentHub.lua` entrypoint. It does not automatically update separately hosted loaders.
