@@ -23,6 +23,12 @@ if not RunService:IsClient() then
 end
 
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+-- Desktop-only contract: reject touch-first devices.
+if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+    warn("Crescent Hub: desktop controls only; touch-only devices are not supported.")
+    return
+end
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
@@ -252,7 +258,6 @@ end
 local useNativeDrawing =
     type(Drawing) ~= "table"
     or type(Drawing.new) ~= "function"
-    or game:GetService("UserInputService").TouchEnabled
 
 if useNativeDrawing then
     local backend = argusCreateNativeDrawingBackend()
@@ -2950,8 +2955,7 @@ function argusMobileRebuild()
         mobileToggle(ArgusMobile.Content,"Privacy Curtain / 截圖遮罩","ArgusPrivacyCurtain")
         mobileLabel(ArgusMobile.Content,"直播模式會隱藏 ESP 視覺；截圖遮罩會以不透明遮罩蓋住遊戲畫面。Roblox 無法保證阻止外部截圖。",11,46)
         mobileLabel(ArgusMobile.Content,"UI / device: "..tostring(_G.ArgusDeviceType),11,28)
-        mobileLabel(ArgusMobile.Content,"按住設定的觸控區域啟動瞄準；放開立即停止。",11,34)
-        mobileNumber(ArgusMobile.Content,"Aim Touch Start X","ArgusMobileAimTouchMinX",0.25,0.8,0.05)
+        mobileLabel(ArgusMobile.Content,"Desktop controls: right mouse button / configured keybind.",11,34)
         mobileNumber(ArgusMobile.Content,"Weight Crosshair","ArgusWeightCrosshair",0,2,0.05)
         mobileNumber(ArgusMobile.Content,"Weight Distance","ArgusWeightDistance",0,2,0.05)
         mobileNumber(ArgusMobile.Content,"Weight Health","ArgusWeightHealth",0,2,0.05)
@@ -3103,11 +3107,9 @@ local function argusCreateMobileUI()
     local function argusApplyResponsiveSize()
         local camera = workspace.CurrentCamera
         local viewport = camera and camera.ViewportSize or Vector2.new(1280,720)
-        local touchOnly = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-
-        -- Compact mobile layout: never occupy most of the entire screen.
-        local width = math.min(touchOnly and 460 or 560, math.max(300, viewport.X * (touchOnly and 0.86 or 0.72)))
-        local height = math.min(touchOnly and 620 or 720, math.max(430, viewport.Y * (touchOnly and 0.78 or 0.78)))
+        -- Desktop layout; touch-first responsive sizing is intentionally removed.
+        local width = math.min(560, math.max(480, viewport.X * 0.72))
+        local height = math.min(720, math.max(520, viewport.Y * 0.78))
         frame.Size = UDim2.fromOffset(width,height)
 
         -- Always start / reset at the center. While dragging, preserve the
@@ -3250,14 +3252,12 @@ local function argusCreateMobileUI()
             end
         end)
         b.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1
-                or input.UserInputType == Enum.UserInputType.Touch then
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
                 mobileTween(tabScale, 0.06, {Scale = 0.96})
             end
         end)
         b.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1
-                or input.UserInputType == Enum.UserInputType.Touch then
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
                 mobileTween(tabScale, 0.12, {Scale = 1})
             end
         end)
@@ -3396,10 +3396,9 @@ local function argusCreateMobileUI()
         panelTween = mobileTween(panelScale, 0.2, {Scale = 1}, Enum.EasingStyle.Back)
     end)
 
-    -- Drag: header works with both touch and mouse.
+    -- Drag is mouse-only.
     title.InputBegan:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.Touch
-            or input.UserInputType==Enum.UserInputType.MouseButton1 then
+        if input.UserInputType==Enum.UserInputType.MouseButton1 then
             ArgusMobile.Dragging=true
             ArgusMobile.DragInput=input
             ArgusMobile.DragStart=input.Position
@@ -3408,8 +3407,7 @@ local function argusCreateMobileUI()
     end)
 
     title.InputChanged:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseMovement
-            or input.UserInputType==Enum.UserInputType.Touch then
+        if input.UserInputType==Enum.UserInputType.MouseMovement then
             ArgusMobile.DragInput=input
         end
     end)
@@ -3417,8 +3415,7 @@ local function argusCreateMobileUI()
     trackDragConnection(UserInputService.InputChanged:Connect(function(input)
         if not ArgusMobile.Dragging then return end
         if input~=ArgusMobile.DragInput
-            and input.UserInputType~=Enum.UserInputType.MouseMovement
-            and input.UserInputType~=Enum.UserInputType.Touch then
+            and input.UserInputType~=Enum.UserInputType.MouseMovement then
             return
         end
 
@@ -3431,8 +3428,7 @@ local function argusCreateMobileUI()
     end))
 
     trackDragConnection(UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.Touch
-            or input.UserInputType==Enum.UserInputType.MouseButton1 then
+        if input.UserInputType==Enum.UserInputType.MouseButton1 then
             ArgusMobile.Dragging=false
             ArgusMobile.DragInput=nil
         end
@@ -3593,16 +3589,13 @@ end)
 -- ============================================================
 -- FINAL OPTIMIZATION LAYER
 -- Target/LOS cache, performance budgets, cleanup, config repair,
--- touch safety, camera recovery, state telemetry and fail-safe.
+-- desktop input, camera recovery, state telemetry and fail-safe.
 -- ============================================================
 _G.ArgusLOSCacheLifetime = 0.055
 _G.ArgusTargetSearchInterval = 0.035
 _G.ArgusESPAdaptive = true
 _G.ArgusESPMinUpdateRate = 20
 _G.ArgusESPMaxUpdateRate = 60
-_G.ArgusTouchLongPress = true
-_G.ArgusTouchMinHold = 0.045
-_G.ArgusTouchCancelOnUI = true
 _G.ArgusCameraRecovery = true
 _G.ArgusFailSafe = true
 _G.ArgusRuntimeTelemetry = true
