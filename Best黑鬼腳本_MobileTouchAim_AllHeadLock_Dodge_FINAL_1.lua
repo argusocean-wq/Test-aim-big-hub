@@ -3038,6 +3038,12 @@ local function argusCreateMobileUI()
     -- Disconnect the previous camera's viewport listener to avoid stale connections.
     local viewportConnection
     local cameraChangedConnection
+    -- Global input listeners outlive their UI objects, so track and release them explicitly.
+    local dragConnections = {}
+    local function trackDragConnection(connection)
+        if connection then table.insert(dragConnections, connection) end
+        return connection
+    end
     local function bindViewportCamera(camera)
         if viewportConnection then
             viewportConnection:Disconnect()
@@ -3064,6 +3070,10 @@ local function argusCreateMobileUI()
             cameraChangedConnection:Disconnect()
             cameraChangedConnection = nil
         end
+        for _, connection in ipairs(dragConnections) do
+            pcall(function() connection:Disconnect() end)
+        end
+        table.clear(dragConnections)
     end)
     task.defer(argusApplyResponsiveSize)
 
@@ -3077,7 +3087,7 @@ local function argusCreateMobileUI()
     title.BackgroundColor3=ArgusUITheme.Surface
     title.BorderSizePixel=0
     title.Size=UDim2.new(1,0,0,46)
-    title.Text="CRESCENT HUB  /  "..tostring(_G.ArgusDeviceType)
+    title.Text="CRESCENT HUB  /  "..tostring(_G.ArgusDeviceType).."  /  "..tostring(_G.ArgusVersion or "v0.0.01")
     title.TextColor3=ArgusUITheme.Text
     title.TextSize=16
     title.Font=Enum.Font.GothamBold
@@ -3319,7 +3329,7 @@ local function argusCreateMobileUI()
         end
     end)
 
-    UserInputService.InputChanged:Connect(function(input)
+    trackDragConnection(UserInputService.InputChanged:Connect(function(input)
         if not ArgusMobile.Dragging then return end
         if input~=ArgusMobile.DragInput
             and input.UserInputType~=Enum.UserInputType.MouseMovement
@@ -3333,15 +3343,15 @@ local function argusCreateMobileUI()
         local nx=math.clamp(ArgusMobile.FrameStart.X+delta.X,6,math.max(6,viewport.X-fs.X-6))
         local ny=math.clamp(ArgusMobile.FrameStart.Y+delta.Y,6,math.max(6,viewport.Y-fs.Y-6))
         frame.Position=UDim2.fromOffset(nx,ny)
-    end)
+    end))
 
-    UserInputService.InputEnded:Connect(function(input)
+    trackDragConnection(UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType==Enum.UserInputType.Touch
             or input.UserInputType==Enum.UserInputType.MouseButton1 then
             ArgusMobile.Dragging=false
             ArgusMobile.DragInput=nil
         end
-    end)
+    end))
 
     argusMobileRebuild()
 end
