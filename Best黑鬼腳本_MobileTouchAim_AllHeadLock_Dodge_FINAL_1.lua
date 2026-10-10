@@ -2521,6 +2521,9 @@ local ArgusUITheme = {
     GradientMid = Color3.fromRGB(18, 43, 59),
     GradientBright = Color3.fromRGB(174, 224, 255),
     GradientWhite = Color3.fromRGB(248, 251, 255),
+    Radius = {Panel = 16, Card = 10, Control = 8, Compact = 6},
+    TextSize = {Title = 16, Body = 13, Label = 12, Caption = 11},
+    Spacing = {Panel = 14, Section = 8, Compact = 4},
 }
  
 local function mobileGradient(object, colors, rotation)
@@ -2614,7 +2617,7 @@ local function mobileButton(parent, text, callback, height)
     b.Size = UDim2.new(1,0,0,height or 38)
     b.AutoButtonColor = false
     b.Parent = parent
-    mobileCorner(b, 10)
+    mobileCorner(b, ArgusUITheme.Radius.Card)
     local outline = mobileStroke(b, ArgusUITheme.Border, 0.28, 1)
     local buttonScale = Instance.new("UIScale")
     buttonScale.Scale = 1
@@ -2692,11 +2695,11 @@ end
 
 local function mobileNumber(parent, label, key, min, max, step)
     local row = Instance.new("Frame")
-    row.BackgroundColor3 = ArgusUITheme.Panel
+    row.BackgroundColor3 = ArgusUITheme.Surface
     row.BorderSizePixel = 0
     row.Size = UDim2.new(1,0,0,42)
     row.Parent = parent
-    mobileCorner(row, 8)
+    mobileCorner(row, ArgusUITheme.Radius.Control)
     mobileStroke(row, ArgusUITheme.Border, 0.35, 1)
 
     local name = Instance.new("TextLabel")
@@ -2705,27 +2708,28 @@ local function mobileNumber(parent, label, key, min, max, step)
     name.Size = UDim2.new(0.48,0,1,0)
     name.Font = Enum.Font.GothamSemibold
     name.TextSize = 12
-    name.TextColor3 = Color3.fromRGB(230,230,230)
+    name.TextColor3 = ArgusUITheme.Text
     name.TextXAlignment = Enum.TextXAlignment.Left
     name.Text = label
     name.Parent = row
 
     local minus = Instance.new("TextButton")
-    minus.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    minus.BackgroundColor3 = ArgusUITheme.Panel
     minus.BorderSizePixel = 0
-    minus.TextColor3 = Color3.fromRGB(255,255,255)
+    minus.TextColor3 = ArgusUITheme.Text
     minus.Font = Enum.Font.GothamBold
     minus.TextSize = 16
     minus.Text = "−"
     minus.Size = UDim2.fromOffset(32,30)
     minus.Position = UDim2.new(1,-148,0,6)
     minus.Parent = row
-    mobileCorner(minus, 6)
+    mobileCorner(minus, ArgusUITheme.Radius.Compact)
+    mobileStroke(minus, ArgusUITheme.Border, 0.4, 1)
 
     local box = Instance.new("TextBox")
-    box.BackgroundColor3 = Color3.fromRGB(10,10,10)
-    box.BorderColor3 = Color3.fromRGB(80,80,80)
-    box.TextColor3 = Color3.fromRGB(255,255,255)
+    box.BackgroundColor3 = ArgusUITheme.Panel
+    box.BorderColor3 = ArgusUITheme.Border
+    box.TextColor3 = ArgusUITheme.Text
     box.Font = Enum.Font.Gotham
     box.TextSize = 12
     box.Text = tostring(_G[key])
@@ -2733,20 +2737,21 @@ local function mobileNumber(parent, label, key, min, max, step)
     box.Size = UDim2.fromOffset(78,30)
     box.Position = UDim2.new(1,-112,0,6)
     box.Parent = row
-    mobileCorner(box, 6)
+    mobileCorner(box, ArgusUITheme.Radius.Compact)
     mobileStroke(box, ArgusUITheme.Border, 0.2, 1)
 
     local plus = Instance.new("TextButton")
-    plus.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    plus.BackgroundColor3 = ArgusUITheme.Panel
     plus.BorderSizePixel = 0
-    plus.TextColor3 = Color3.fromRGB(255,255,255)
+    plus.TextColor3 = ArgusUITheme.Text
     plus.Font = Enum.Font.GothamBold
     plus.TextSize = 16
     plus.Text = "+"
     plus.Size = UDim2.fromOffset(32,30)
     plus.Position = UDim2.new(1,-32,0,6)
     plus.Parent = row
-    mobileCorner(plus, 6)
+    mobileCorner(plus, ArgusUITheme.Radius.Compact)
+    mobileStroke(plus, ArgusUITheme.Border, 0.4, 1)
 
     local function setValue(v)
         v = tonumber(v) or tonumber(_G[key]) or min
@@ -2998,7 +3003,7 @@ local function argusCreateMobileUI()
     frame.Visible=false
     frame.ClipsDescendants=true
     frame.Parent=gui
-    mobileCorner(frame, 16)
+    mobileCorner(frame, ArgusUITheme.Radius.Panel)
     mobileStroke(frame, ArgusUITheme.Border, 0.04, 1.35)
     mobileApplyPanelGradient(frame, 35)
     ArgusMobile.Frame=frame
@@ -3287,13 +3292,6 @@ local function argusCreateMobileUI()
     reopen.Parent=gui
     mobileCorner(reopen, 14)
     mobileStroke(reopen, ArgusUITheme.Accent, 0.02, 1.5)
-    local reopenGradient = Instance.new("UIGradient")
-    reopenGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 43, 57)),
-        ColorSequenceKeypoint.new(1, ArgusUITheme.Panel),
-    })
-    reopenGradient.Rotation = 35
-    reopenGradient.Parent = reopen
     ArgusMobile.Reopen=reopen
     ArgusMobile.FPSPanel=reopen
     reopen.MouseEnter:Connect(function()
