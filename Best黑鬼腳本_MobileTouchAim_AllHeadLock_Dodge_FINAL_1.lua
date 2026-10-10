@@ -485,6 +485,20 @@ end
 
 -- RenderStepped
 RunService.RenderStepped:Connect(function()
+    -- Stream mode suppresses ESP overlays without changing targeting/gameplay state.
+    if _G.ArgusStreamMode then
+        for _, esp in pairs(ESPObjects) do
+            for _, key in ipairs({"Box","BoxFill","HealthBar","HealthOutline","NameTag","ToolText","Tracer"}) do
+                local obj = esp[key]
+                if obj and obj.Visible then obj.Visible = false end
+            end
+            for _, line in pairs(esp.Skeleton or {}) do
+                if line and line.Visible then line.Visible = false end
+            end
+            if esp.Highlight then esp.Highlight.Enabled = false end
+        end
+        return
+    end
     -- CurrentCamera can be replaced during respawn/camera scripts; refresh it on the client.
     Camera = workspace.CurrentCamera
     if not Camera or not argusShouldUpdateESP() then
@@ -1657,6 +1671,8 @@ _G.ArgusUIKey = Enum.KeyCode.RightControl
 _G.ArgusDebugMode = false
 _G.ArgusESPPerformance = true
 _G.ArgusESPUpdateRate = 60
+_G.ArgusStreamMode = _G.ArgusStreamMode == true
+_G.ArgusPrivacyCurtain = _G.ArgusPrivacyCurtain == true
 _G.ArgusTargetSelectionMode = "Crosshair"
 _G.ArgusWeightCrosshair = 1.0
 _G.ArgusWeightDistance = 0.35
@@ -2207,6 +2223,10 @@ end
 local ArgusInput = UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     if input.KeyCode == _G.ArgusUIKey then
+        if _G.ArgusPrivacyCurtain then
+            _G.ArgusPrivacyCurtain = false
+            if ArgusMobile.PrivacyCurtain then ArgusMobile.PrivacyCurtain.Visible = false end
+        end
         ArgusUI.Open = not ArgusUI.Open
         ArgusUI.Anim.TargetOpen = ArgusUI.Open and 1 or 0
         if ArgusUI.Open then argusRebuildBody() end
@@ -2691,6 +2711,12 @@ end
 local function mobileToggle(parent, label, key)
     return mobileButton(parent, label .. ": " .. argusBoolText(_G[key]), function()
         _G[key] = not _G[key]
+        if key == "ArgusPrivacyCurtain" and ArgusMobile.PrivacyCurtain then
+            ArgusMobile.PrivacyCurtain.Visible = _G.ArgusPrivacyCurtain == true
+        elseif key == "ArgusStreamMode" and _G.ArgusStreamMode then
+            ArgusUI.Open = false
+            ArgusUI.Anim.TargetOpen = 0
+        end
         argusMobileRebuild()
     end)
 end
@@ -2920,6 +2946,9 @@ function argusMobileRebuild()
         mobileToggle(ArgusMobile.Content,"Fail Safe","ArgusFailSafe")
         mobileToggle(ArgusMobile.Content,"Debug Mode","ArgusDebugMode")
         mobileToggle(ArgusMobile.Content,"Low Effects / 低特效","ArgusLowEffects")
+        mobileToggle(ArgusMobile.Content,"Stream Privacy Mode / 直播隱私模式","ArgusStreamMode")
+        mobileToggle(ArgusMobile.Content,"Privacy Curtain / 截圖遮罩","ArgusPrivacyCurtain")
+        mobileLabel(ArgusMobile.Content,"直播模式會隱藏 ESP 視覺；截圖遮罩會以不透明遮罩蓋住遊戲畫面。Roblox 無法保證阻止外部截圖。",11,46)
         mobileLabel(ArgusMobile.Content,"UI / device: "..tostring(_G.ArgusDeviceType),11,28)
         mobileLabel(ArgusMobile.Content,"按住設定的觸控區域啟動瞄準；放開立即停止。",11,34)
         mobileNumber(ArgusMobile.Content,"Aim Touch Start X","ArgusMobileAimTouchMinX",0.25,0.8,0.05)
@@ -3006,6 +3035,32 @@ local function argusCreateMobileUI()
     gui.ResetOnSpawn=false
     gui.Parent=argusGetUIParent()
     ArgusMobile.Gui=gui
+
+    -- Manual privacy curtain: captures show the opaque cover while enabled.
+    -- This is a visual mask, not OS-level screenshot prevention.
+    local privacyCurtain=Instance.new("Frame")
+    privacyCurtain.Name="PrivacyCurtain"
+    privacyCurtain.Size=UDim2.fromScale(1,1)
+    privacyCurtain.Position=UDim2.fromScale(0,0)
+    privacyCurtain.BackgroundColor3=Color3.fromRGB(0,0,0)
+    privacyCurtain.BackgroundTransparency=0
+    privacyCurtain.BorderSizePixel=0
+    privacyCurtain.Visible=_G.ArgusPrivacyCurtain == true
+    privacyCurtain.Active=true
+    privacyCurtain.ZIndex=1000
+    privacyCurtain.Parent=gui
+    local privacyText=Instance.new("TextLabel")
+    privacyText.Name="PrivacyCurtainLabel"
+    privacyText.BackgroundTransparency=1
+    privacyText.Size=UDim2.fromScale(1,1)
+    privacyText.Font=Enum.Font.GothamBold
+    privacyText.Text="PRIVACY MODE  •  CLOSE CURTAIN IN SETTINGS TO RESUME"
+    privacyText.TextColor3=Color3.fromRGB(248,251,255)
+    privacyText.TextSize=16
+    privacyText.TextWrapped=true
+    privacyText.ZIndex=1001
+    privacyText.Parent=privacyCurtain
+    ArgusMobile.PrivacyCurtain=privacyCurtain
 
     local frame=Instance.new("Frame")
     frame.Name="ControlPanel"
