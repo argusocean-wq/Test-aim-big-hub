@@ -2576,7 +2576,10 @@ local function mobileTween(object, duration, properties, style)
     end
 
     local tweenDuration = math.max(0, tonumber(duration) or 0.16)
-    if _G.ArgusLowEffects == true then tweenDuration = math.min(tweenDuration, 0.025) end
+    local runtimeFPS = tonumber(_G.ArgusRuntimeFPS)
+    if _G.ArgusLowEffects == true or (runtimeFPS and runtimeFPS < 30) then
+        tweenDuration = math.min(tweenDuration, 0.025)
+    end
     local ok, tween = pcall(function()
         return TweenService:Create(
             object,
@@ -3428,6 +3431,8 @@ local function argusUpdateFPS(dt)
         local instant=1/dt
         ArgusRuntime.FrameEMA=ArgusRuntime.FrameEMA*0.92+instant*0.08
         ArgusRuntime.FPS=math.clamp(ArgusRuntime.FrameEMA,1,240)
+        -- Publish a lightweight FPS sample for UI quality-of-life decisions.
+        _G.ArgusRuntimeFPS = ArgusRuntime.FPS
     end
 end
 
