@@ -3961,12 +3961,26 @@ local function argusRunModuleHealthCheck()
     _G.ArgusHeadLockHealth = ArgusModuleHealth.HeadLock
 end
 
+-- Show the shared Crescent notice once when the module health monitor catches a runtime/API failure.
+-- Avoid spamming the screen every second if the same issue persists.
+local ArgusSupportNoticeShownForError = false
 local ArgusHealthAccumulator = 0
 RunService.Heartbeat:Connect(function(dt)
     ArgusHealthAccumulator += math.max(dt, 0)
     if ArgusHealthAccumulator < 1 then return end
     ArgusHealthAccumulator = 0
     argusRunModuleHealthCheck()
+    if ArgusModuleHealth.LastError then
+        if not ArgusSupportNoticeShownForError then
+            ArgusSupportNoticeShownForError = true
+            local showNotice = _G.__ARGUS_SHOW_SUPPORT_NOTICE
+            if type(showNotice) == "function" then
+                pcall(showNotice)
+            end
+        end
+    else
+        ArgusSupportNoticeShownForError = false
+    end
 end)
 
 -- 啟動後第一秒立即完成第一次檢查，而不是等使用者操作。
