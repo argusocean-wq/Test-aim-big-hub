@@ -95,6 +95,9 @@ local function showSupportNotice()
     end)
 end
 
+-- Allow the entrypoint health monitor to reuse the same notice when a runtime API fails later.
+_G.__ARGUS_SHOW_SUPPORT_NOTICE = showSupportNotice
+
 local function waitBeforeRetry(seconds)
     if task and type(task.wait) == "function" then
         task.wait(seconds)
@@ -213,9 +216,9 @@ local function loading()
     if not loaded then
         report(stage, detail)
         -- Integrity/API incompatibility must be visible even when the main UI never starts.
-        if stage == "integrity" or stage == "compile" or stage == "runtime" or stage == "initialization" then
-            showSupportNotice()
-        end
+        -- Any failure that prevents a supported, working launch should be visible.
+        -- Includes fetch/network, integrity, compile, runtime, initialization, and internal failures.
+        showSupportNotice()
         return false, stage, detail
     end
 
