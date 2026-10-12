@@ -16,6 +16,85 @@ local function report(stage, message)
     end
 end
 
+-- Show a small, rounded bottom-right notice for unsupported API/runtime cases.
+-- Keep this independent from the main UI so it can appear before the entrypoint loads.
+local function showSupportNotice()
+    pcall(function()
+        local players = game:GetService("Players")
+        local player = players.LocalPlayer
+        if not player then return end
+        local playerGui = player:FindFirstChildOfClass("PlayerGui") or player:WaitForChild("PlayerGui", 5)
+        if not playerGui then return end
+
+        local guiName = "CrescentSupportNotice"
+        local existing = playerGui:FindFirstChild(guiName)
+        if existing then existing:Destroy() end
+
+        local gui = Instance.new("ScreenGui")
+        gui.Name = guiName
+        gui.ResetOnSpawn = false
+        gui.IgnoreGuiInset = true
+        gui.DisplayOrder = 1000000
+        gui.Parent = playerGui
+
+        local frame = Instance.new("Frame")
+        frame.Name = "Notice"
+        frame.AnchorPoint = Vector2.new(1, 1)
+        frame.Position = UDim2.new(1, -18, 1, 90)
+        frame.Size = UDim2.fromOffset(220, 46)
+        frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+        frame.BackgroundTransparency = 0.08
+        frame.BorderSizePixel = 0
+        frame.Parent = gui
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 10)
+        corner.Parent = frame
+
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = Color3.fromRGB(220, 220, 220)
+        stroke.Thickness = 1
+        stroke.Transparency = 0.18
+        stroke.Parent = frame
+
+        local label = Instance.new("TextLabel")
+        label.Name = "Message"
+        label.BackgroundTransparency = 1
+        label.Position = UDim2.fromOffset(12, 0)
+        label.Size = UDim2.new(1, -24, 1, 0)
+        label.Font = Enum.Font.GothamSemibold
+        label.Text = "Crescent not support"
+        label.TextColor3 = Color3.fromRGB(245, 245, 245)
+        label.TextSize = 13
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextTransparency = 1
+        label.Parent = frame
+
+        local tweenService = game:GetService("TweenService")
+        local tweenIn = tweenService:Create(frame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Position = UDim2.new(1, -18, 1, -18)
+        })
+        local textIn = tweenService:Create(label, TweenInfo.new(0.22), {TextTransparency = 0})
+        tweenIn:Play()
+        textIn:Play()
+
+        task.delay(3.2, function()
+            if not gui.Parent then return end
+            local tweenOut = tweenService:Create(frame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                Position = UDim2.new(1, -18, 1, 45),
+                BackgroundTransparency = 1
+            })
+            local textOut = tweenService:Create(label, TweenInfo.new(0.18), {TextTransparency = 1})
+            local strokeOut = tweenService:Create(stroke, TweenInfo.new(0.18), {Transparency = 1})
+            tweenOut:Play()
+            textOut:Play()
+            strokeOut:Play()
+            tweenOut.Completed:Wait()
+            if gui.Parent then gui:Destroy() end
+        end)
+    end)
+end
+
 local function waitBeforeRetry(seconds)
     if task and type(task.wait) == "function" then
         task.wait(seconds)
@@ -133,6 +212,10 @@ local function loading()
     end
     if not loaded then
         report(stage, detail)
+        -- Integrity/API incompatibility must be visible even when the main UI never starts.
+        if stage == "integrity" or stage == "compile" or stage == "runtime" or stage == "initialization" then
+            showSupportNotice()
+        end
         return false, stage, detail
     end
 
