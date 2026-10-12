@@ -1,14 +1,18 @@
 -- Reference external loader for the Argus private/offline-server project.
+-- Pinned release source: v0.0.01 at commit 5a7b1a1d592bb8e082074141ac6ca6f5aa76846f.
 -- Keep executor/API settings and compatibility behavior unchanged.
 -- This file is separate from the main entrypoint and is not called by the main file.
 
-local SOURCE_URL = "https://raw.githubusercontent.com/argusocean-wq/Test-aim-big-hub/main/Best黑鬼腳本_MobileTouchAim_AllHeadLock_Dodge_FINAL_1.lua"
+local SOURCE_VERSION = "v0.0.01"
+local SOURCE_COMMIT = "5a7b1a1d592bb8e082074141ac6ca6f5aa76846f"
+local SOURCE_URL = "https://raw.githubusercontent.com/argusocean-wq/Test-aim-big-hub/" .. SOURCE_COMMIT .. "/Best黑鬼腳本_MobileTouchAim_AllHeadLock_Dodge_FINAL_1.lua"
+local EXPECTED_SHA256 = "ecb775682b293f5d9698c20e875886725826271389d2b49de85cf4f86d9e5991"
 local MAX_FETCH_ATTEMPTS = 3
 local MIN_SOURCE_LENGTH = 500
 
-local function report(message)
+local function report(stage, message)
     if type(warn) == "function" then
-        warn("[Argus Loader] " .. tostring(message))
+        warn("[Argus Loader][" .. tostring(stage) .. "] " .. tostring(message))
     end
 end
 
@@ -33,7 +37,7 @@ local function fetchSource()
         end
 
         if not ok then
-            lastError = result
+            lastError = tostring(result)
         elseif type(result) ~= "string" then
             lastError = "HTTP request did not return text"
         else
@@ -41,7 +45,7 @@ local function fetchSource()
         end
 
         if attempt < MAX_FETCH_ATTEMPTS then
-            report("download attempt " .. tostring(attempt) .. " failed; retrying")
+            report("download", "attempt " .. tostring(attempt) .. " failed; retrying")
             waitBeforeRetry(attempt)
         end
     end
@@ -49,56 +53,95 @@ local function fetchSource()
     return nil, lastError
 end
 
+local function verifySource(source)
+    local versionPattern = '_G%.ArgusVersion%s*=%s*"' .. SOURCE_VERSION:gsub("%.", "%%.") .. '"'
+    if not source:match(versionPattern) then
+        return false, "source version marker mismatch; expected " .. SOURCE_VERSION
+    end
+
+    -- Fail closed when the current runtime cannot calculate SHA-256.
+    -- Do not silently downgrade to a length-only or version-only check.
+    if type(crypt) ~= "table" or type(crypt.hash) ~= "function" then
+        return false, "SHA-256 verification unavailable (crypt.hash is required)"
+    end
+
+    local hashOk, digest = pcall(crypt.hash, source, "sha256")
+    if not hashOk or type(digest) ~= "string" then
+        return false, "SHA-256 calculation failed: " .. tostring(digest)
+    end
+
+    digest = string.lower(digest)
+    if digest ~= EXPECTED_SHA256 then
+        return false, "SHA-256 mismatch; refusing to compile or execute source"
+    end
+
+    return true, "version and SHA-256 verified"
+end
+
 local function loading()
-    -- Prevent overlapping calls without changing the executor's APIs.
     if _G.__ARGUS_LOADER_RUNNING then
-        return false, "loader is already running"
+        return false, "state", "loader is already running"
     end
     _G.__ARGUS_LOADER_RUNNING = true
 
-    local ok, result, detail = pcall(function()
+    -- Reset only the loader handshake marker before each attempt.
+    _G.__ARGUS_INIT_STATUS = nil
+
+    local callOk, loaded, stage, detail = pcall(function()
         local source, fetchError = fetchSource()
         if not source then
-            return false, "unable to download source: " .. tostring(fetchError)
+            return false, "download", "unable to download source: " .. tostring(fetchError)
+        end
+
+        local verified, verifyMessage = verifySource(source)
+        if not verified then
+            return false, "integrity", verifyMessage
         end
 
         if type(loadstring) ~= "function" then
-            return false, "loadstring is unavailable in this environment"
+            return false, "compile", "loadstring is unavailable in this environment"
         end
 
         local compileOk, chunk, compileError = pcall(loadstring, source)
         if not compileOk then
-            return false, "source compilation raised an error: " .. tostring(chunk)
+            return false, "compile", "compiler raised an error: " .. tostring(chunk)
         end
         if type(chunk) ~= "function" then
-            return false, "source compilation failed: " .. tostring(compileError or "no compiled function returned")
+            return false, "compile", tostring(compileError or "no compiled function returned")
         end
 
-        -- Do not retry execution: a runtime failure may occur after partial initialization.
+        -- Never retry execution: it may have partially initialized the UI or event handlers.
+        _G.__ARGUS_INIT_STATUS = "starting"
         local runOk, runError = pcall(chunk)
         if not runOk then
-            return false, "entrypoint raised a runtime error: " .. tostring(runError)
+            return false, "runtime", "entrypoint raised an error: " .. tostring(runError)
         end
 
-        return true, "entrypoint executed"
+        if _G.__ARGUS_INIT_STATUS ~= "ready" then
+            return false, "initialization", "entrypoint returned without reporting ready (status: " .. tostring(_G.__ARGUS_INIT_STATUS) .. ")"
+        end
+
+        return true, "complete", "release " .. SOURCE_VERSION .. " loaded; version and SHA-256 verified"
     end)
 
+    -- Always release the re-entry lock after ordinary Lua errors or returned failures.
     _G.__ARGUS_LOADER_RUNNING = nil
 
-    if not ok then
-        report(result)
-        return false, result
+    if not callOk then
+        report("internal", loaded)
+        return false, "internal", tostring(loaded)
     end
-    if not result then
-        report(detail)
-        return false, detail
+    if not loaded then
+        report(stage, detail)
+        return false, stage, detail
     end
 
-    return true, detail
+    report("complete", detail)
+    return true, stage, detail
 end
 
--- Keep the familiar loading() call style.
-local loaded, loadMessage = loading()
+-- Preserve the familiar loading() call style.
+local loaded, stage, loadMessage = loading()
 if not loaded then
-    report(loadMessage)
+    report(stage, loadMessage)
 end
