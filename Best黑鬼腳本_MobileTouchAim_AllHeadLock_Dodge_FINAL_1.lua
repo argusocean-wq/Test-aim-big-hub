@@ -1,6 +1,7 @@
 -- ARGUS
 -- Release baseline: the project owner requested versioning to start at v0.0.01.
 _G.ArgusVersion = "v0.0.01"
+_G.__ARGUS_INIT_STATUS = "initializing"
 _G.ESPEnabled   = true
 _G.BoxESP       = true
 _G.BoxFilled    = true
@@ -4002,3 +4003,6 @@ if _G.ArgusMobileUIEnabled then
         end
     end)
 end
+
+-- Loader handshake: set only after the entrypoint reaches its final initialization section.
+_G.__ARGUS_INIT_STATUS = "ready"
