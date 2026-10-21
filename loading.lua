@@ -1,12 +1,12 @@
 -- Reference external loader for the Argus private/offline-server project.
--- Pinned release source: v0.0.01 at commit 5a7b1a1d592bb8e082074141ac6ca6f5aa76846f.
+-- Pinned release source: v0.0.01 at commit f3429e4ba410a1d4b8fbf741ab8a3ed27be07484.
 -- Keep executor/API settings and compatibility behavior unchanged.
 -- This file is separate from the main entrypoint and is not called by the main file.
 
 local SOURCE_VERSION = "v0.0.01"
-local SOURCE_COMMIT = "5a7b1a1d592bb8e082074141ac6ca6f5aa76846f"
-local SOURCE_URL = "https://raw.githubusercontent.com/argusocean-wq/Test-aim-big-hub/" .. SOURCE_COMMIT .. "/Best黑鬼腳本_MobileTouchAim_AllHeadLock_Dodge_FINAL_1.lua"
-local EXPECTED_SHA256 = "ecb775682b293f5d9698c20e875886725826271389d2b49de85cf4f86d9e5991"
+local SOURCE_COMMIT = "f3429e4ba410a1d4b8fbf741ab8a3ed27be07484"
+local SOURCE_URL = "https://raw.githubusercontent.com/argusocean-wq/Test-aim-big-hub/" .. SOURCE_COMMIT .. "/CrescentHub.lua"
+local EXPECTED_SHA256 = "92f054da150d5486da393dd3090f7bccfa81833e690b961e75a61c4bd0154e87"
 local MAX_FETCH_ATTEMPTS = 3
 local MIN_SOURCE_LENGTH = 500
 
