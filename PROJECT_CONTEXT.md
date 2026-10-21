@@ -18,26 +18,23 @@ This is a record of the owner's stated context, not an independent legal determi
 - Prefer focused, reversible changes; verify GitHub read-back after writes.
 - Do not claim Luau syntax or runtime tests passed unless they were actually run in a compatible environment.
 
-## Entry point
+## Product name and entry points
 
-The current Raw entrypoint is:
+- User-facing product name: **Crescent Hub**.
+- Canonical Raw entrypoint: `https://raw.githubusercontent.com/argusocean-wq/Test-aim-big-hub/main/CrescentHub.lua`.
+- Legacy compatibility path remains available: `https://raw.githubusercontent.com/argusocean-wq/Test-aim-big-hub/main/Best黑鬼腳本_MobileTouchAim_AllHeadLock_Dodge_FINAL_1.lua`. Keep its content aligned with the canonical entrypoint unless the owner explicitly asks to retire it.
+- The reference `loading.lua` now points to `CrescentHub.lua`; this does not automatically replace a separately hosted/external copy of the loader.
 
-`https://raw.githubusercontent.com/argusocean-wq/Test-aim-big-hub/main/Best黑鬼腳本_MobileTouchAim_AllHeadLock_Dodge_FINAL_1.lua`
+## Monochrome UI rules
 
-The external loader is not embedded in the main Lua file. `loading.lua` in this repository is a hardened reference implementation; it does not automatically replace a separately hosted/external copy of the loader.
+- UI chrome must use black, white, and grayscale only.
+- Grayscale accents and gradients may animate, but must not introduce colored hues.
+- Gameplay overlay colors are separate from UI chrome; do not change ESP/skeleton colors merely to enforce the UI palette.
 
 
 ## Crescent Hub branding (2026-10-09)
 
 - The user-facing product name and UI title are **Crescent Hub**.
-- UI chrome must use ice blue, black, and white as the primary palette, including animated ice-blue accents and blue-black gradients. Keep supporting text and borders restrained; do not introduce unrelated accent colors.
+- UI chrome must use black, white, and grayscale only, including animated grayscale accents and monochrome gradients. Do not introduce colored UI accents.
 - Keep gameplay visual overlay colors separate from UI theme colors unless the owner explicitly requests changing those gameplay visuals.
 - The existing Lua filename and Raw entrypoint URL are intentionally retained for compatibility with already-configured external loaders. Do not rename/migrate the path unless all loader references are deliberately updated together.
-
-## Versioning and verification policy (2026-10-10)
-
-- The project version baseline starts at `v0.0.01`; the main Lua entrypoint exposes `_G.ArgusVersion` and displays the version in the control-panel header.
-- Prefer small, reversible commits, with a backup branch before a broad maintenance batch.
-- After each GitHub write, fetch the changed file from `main` and verify the expected markers/content.
-- Distinguish repository read-back and static inspection from Luau parsing, Roblox Studio runtime testing, and device testing. Never report the latter as passed unless they were actually executed.
-- Keep UI lifecycle cleanup explicit for global input connections and ensure UI tweens do not compete on the same instance.
