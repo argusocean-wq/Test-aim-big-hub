@@ -23,6 +23,13 @@ if not RunService:IsClient() then
     return
 end
 
+-- Desktop-only runtime gate: require both keyboard and mouse before initializing any modules.
+local DesktopInput = game:GetService("UserInputService")
+if not DesktopInput.KeyboardEnabled or not DesktopInput.MouseEnabled then
+    _G.__ARGUS_INIT_STATUS = "unsupported_device"
+    return
+end
+
 local Players = game:GetService("Players")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
@@ -226,7 +233,7 @@ local function argusCreateNativeDrawingBackend()
             end,
             __newindex = function(self, key, value)
                 -- Skip redundant property writes: the UI/ESP loops assign many
-                -- unchanged values every frame, especially on the native mobile backend.
+                -- unchanged values every frame, especially in the native backend.
                 if self._props[key] == value then
                     return
                 end
@@ -253,7 +260,6 @@ end
 local useNativeDrawing =
     type(Drawing) ~= "table"
     or type(Drawing.new) ~= "function"
-    or game:GetService("UserInputService").TouchEnabled
 
 if useNativeDrawing then
     local backend = argusCreateNativeDrawingBackend()
@@ -780,18 +786,15 @@ _G.TargetAssistPart = "Head"
 -- 數值越大，鏡頭轉向越快；數值越小，轉向越慢。
 _G.TargetAssistSmoothness = 8
 
--- 手機 Aimbot 強度（僅手機觸控模式使用）
--- 100 = 強鎖；數值越低，鏡頭跟隨越柔和。
-_G.MobileAimStrength = 100
--- 手機鎖頭強度：0 = 以身體為主；100 = 優先鎖頭。
-_G.MobileHeadLockStrength = 100
--- 手機鎖頭進階判定
-_G.MobileHeadLockThreshold = 65
-_G.MobileHeadLockGrace = 0.12
-_G.MobileHeadLockSwitchMargin = 0.10
-_G.MobileHeadLockReacquireDelay = 0.08
-_G.MobileHeadLockPreferred = true
-_G.MobileHeadLockState = "Body"
+-- Desktop head-lock strength: 0 = body priority; 100 = head priority.
+_G.TargetAssistHeadLockStrength = 100
+-- Desktop head-lock qualification settings
+_G.TargetAssistHeadLockThreshold = 65
+_G.TargetAssistHeadLockGrace = 0.12
+_G.TargetAssistHeadLockSwitchMargin = 0.10
+_G.TargetAssistHeadLockReacquireDelay = 0.08
+_G.TargetAssistHeadLockPreferred = true
+_G.TargetAssistHeadLockState = "Body"
 
 -- 最大鎖定距離；0 = 不限制距離。
 _G.TargetAssistMaxDistance = 1000
@@ -809,7 +812,11 @@ _G.TargetAssistRequireOnScreen = true
 -- FOV 圓圈半徑（像素）
 _G.TargetAssistFOVEnabled = true
 _G.TargetAssistFOVRadius = 180
-_G.TargetAssistFOVColor = Color3.fromRGB(255,255,255)
+-- FOV 狀態色：紅色代表沒有有效目標，綠色代表有符合條件的目標。
+_G.TargetAssistFOVColor = Color3.fromRGB(255, 0, 0)
+_G.TargetAssistFOVNoTargetColor = Color3.fromRGB(255, 0, 0)
+_G.TargetAssistFOVTargetColor = Color3.fromRGB(0, 255, 0)
+_G.TargetAssistFOVHasTarget = false
 _G.TargetAssistFOVThickness = 1
 _G.TargetAssistFOVFilled = false
 _G.TargetAssistFOVTransparency = 1
@@ -1113,7 +1120,7 @@ local function getTargetScore(player, screenCenter, localRoot)
     return score, screenDistance, worldDistance
 end
 
-local function getMobileHeadLockInfo(character, screenCenter)
+local function getTargetHeadLockInfo(character, screenCenter)
     if not character then return nil end
     local head = character:FindFirstChild("Head")
     local body = character:FindFirstChild("UpperTorso")
@@ -1130,7 +1137,7 @@ local function getMobileHeadLockInfo(character, screenCenter)
     if _G.TargetAssistFOVEnabled and distance > fov then return nil end
     if _G.TargetAssistWallCheck and not hasLineOfSight(head) then return nil end
 
-    local threshold = math.clamp(tonumber(_G.MobileHeadLockThreshold) or 65, 0, 100)
+    local threshold = math.clamp(tonumber(_G.TargetAssistHeadLockThreshold) or 65, 0, 100)
     local proximity = 1 - math.clamp(distance / fov, 0, 1)
     local visibilityScore = 1
     local headScore = proximity * 70 + visibilityScore * 30
@@ -1143,13 +1150,13 @@ local function getMobileHeadLockInfo(character, screenCenter)
     }
 end
 
-local function resetMobileHeadState()
+local function resetTargetHeadState()
     TargetAssist.HeadState = "Body"
     TargetAssist.HeadLostAt = 0
     TargetAssist.HeadLockStartedAt = 0
     TargetAssist.HeadReacquireAt = 0
     TargetAssist.LastHeadScore = math.huge
-    _G.MobileHeadLockState = "Body"
+    _G.TargetAssistHeadLockState = "Body"
 end
 
 local function getBestTarget()
@@ -1199,83 +1206,14 @@ local function getBestTarget()
     return bestPlayer, bestScore
 end
 
-local MobileTouchState = {
-    Active = false,
-    Touches = {},
-}
-
-_G.ArgusMobileAimRegion = _G.ArgusMobileAimRegion or "RightHalf"
-_G.ArgusMobileAimTouchMinX = tonumber(_G.ArgusMobileAimTouchMinX) or 0.45
-_G.ArgusMobileAimActivationMode = "ScreenHold"
-
-local function isMobileAimTouchAllowed(position)
-    if not position then return false end
-    if _G.ArgusMobileAimRegion == "FullScreen" then return true end
-    local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
-    local minX = math.clamp(tonumber(_G.ArgusMobileAimTouchMinX) or 0.45,0,0.9)
-    return position.X >= viewport.X * minX
-end
-
-local function isMobileTouchMode()
-    local deviceType = _G.ArgusDeviceType or "Desktop"
-    local source = _G.ArgusInputSource or "Auto"
-    return UserInputService.TouchEnabled
-        and (deviceType == "Mobile" or source == "Touch" or (source == "Auto" and deviceType == "Hybrid"))
-end
-
-local function isTouchOnMobileUI(position)
-    -- 只攔截真正可互動的遊戲 UI，避免 ESP/裝飾用透明 GuiObject 阻擋瞄準觸控。
-    local ok, objects = pcall(function()
-        return game:GetService("GuiService"):GetGuiObjectsAtPosition(position.X, position.Y)
-    end)
-    if not ok or not objects then return false end
-
-    for _, object in ipairs(objects) do
-        if object and object:IsA("GuiObject") and object.Visible then
-            if object.Active
-                or object:IsA("GuiButton")
-                or object:IsA("TextBox")
-                or object:IsA("ScrollingFrame") then
-                return true
-            end
-        end
-    end
-    return false
-end
-
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    -- HoldButton 模式只由專用按鈕啟動；ScreenHold 是可選的舊式觸控模式。
-    if input.UserInputType == Enum.UserInputType.Touch and isMobileTouchMode() then
-        if _G.ArgusMobileAimActivationMode == "ScreenHold"
-            and not isTouchOnMobileUI(input.Position)
-            and isMobileAimTouchAllowed(input.Position) then
-            MobileTouchState.Touches[input] = true
-            MobileTouchState.Active = true
-            _G.ArgusMobileAimActive = true
-        end
-        return
-    end
-
     if gameProcessed then return end
-
     if input.KeyCode == Enum.KeyCode.RightShift then
         _G.TargetAssistVisualsHidden = not _G.TargetAssistVisualsHidden
         return
     end
-
     if input.KeyCode == _G.TargetAssistToggleKey then
         TargetAssist.ToggleState = not TargetAssist.ToggleState
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType ~= Enum.UserInputType.Touch then return end
-    if not isMobileTouchMode() then return end
-
-    MobileTouchState.Touches[input] = nil
-    if _G.ArgusMobileAimActivationMode == "ScreenHold" then
-        MobileTouchState.Active = next(MobileTouchState.Touches) ~= nil
-        _G.ArgusMobileAimActive = MobileTouchState.Active
     end
 end)
 
@@ -1369,58 +1307,48 @@ local function isCameraADSActive()
     return ArgusADSState.Active
 end
 
+-- Forward declaration: the cached target selector is implemented later in the runtime section.
+local argusCachedBestTarget
+
 local function isAimActive()
     if not _G.TargetAssistEnabled then
         return false
     end
 
-    -- Zoom-in detection is the first activation signal; existing input modes remain fallbacks.
-    if isCameraADSActive() then
+    -- 不要求開鏡或按住滑鼠：只要 FOV 內存在有效目標便可輔助。
+    -- FOV 外、被遮擋、隊友、死亡或超距離目標都不能啟動輔助。
+    local currentTarget = TargetAssist.CurrentTarget
+    if currentTarget and targetAssistIsValid(currentTarget) then
         return true
     end
 
-    if _G.TargetAssistAutoSingleVisible == true then
-        local _, visibleCount = getAutoSingleVisibleTarget()
-        return visibleCount == 1
-    end
-
-    local deviceType = _G.ArgusDeviceType or "Desktop"
-    local source = _G.ArgusInputSource or "Auto"
-
-    -- 手機：只使用「按住遊戲畫面」作為啟動條件，不依賴 Aim/Q 按鍵。
-    -- Hybrid 在觸控輸入時也使用相同規則；電腦滑鼠鍵盤邏輯保持原樣。
-    if source == "Touch" or (source == "Auto" and deviceType == "Mobile") then
-        return MobileTouchState.Active == true
-    end
-
-    if source == "Auto" and deviceType == "Hybrid" and MobileTouchState.Active then
-        return true
-    end
-
-    if source == "MouseKeyboard" and deviceType == "Mobile" then
-        return false
-    end
-
-    local rightMouse = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
-    local toggle = TargetAssist.ToggleState
-    local mode = _G.TargetAssistActivationMode
-
-    if mode == "Toggle" then
-        return toggle
-    elseif mode == "Both" then
-        return rightMouse or toggle
-    end
-
-    return rightMouse
+    local candidate = argusCachedBestTarget()
+    return candidate ~= nil and targetAssistIsValid(candidate)
 end
 
 local function updateTargetAssist(dt)
     TargetAssistFOV.Radius = tonumber(_G.TargetAssistFOVRadius) or 180
-    TargetAssistFOV.Color = _G.TargetAssistFOVColor
     TargetAssistFOV.Thickness = tonumber(_G.TargetAssistFOVThickness) or 1
     TargetAssistFOV.Filled = _G.TargetAssistFOVFilled
     TargetAssistFOV.Transparency = _G.TargetAssistFOVTransparency
     TargetAssistFOV.Visible = _G.TargetAssistEnabled and _G.TargetAssistFOVEnabled and not _G.TargetAssistVisualsHidden
+
+    -- 以同一套目標驗證條件決定 FOV 顏色，避免顏色與實際瞄準狀態不一致。
+    local hasFOVTarget = false
+    if _G.TargetAssistEnabled then
+        local currentTarget = TargetAssist.CurrentTarget
+        if currentTarget and targetAssistIsValid(currentTarget) then
+            hasFOVTarget = true
+        else
+            local candidate = argusCachedBestTarget()
+            hasFOVTarget = candidate ~= nil and targetAssistIsValid(candidate)
+        end
+    end
+    _G.TargetAssistFOVHasTarget = hasFOVTarget
+    _G.TargetAssistFOVColor = hasFOVTarget
+        and (_G.TargetAssistFOVTargetColor or Color3.fromRGB(0, 255, 0))
+        or (_G.TargetAssistFOVNoTargetColor or Color3.fromRGB(255, 0, 0))
+    TargetAssistFOV.Color = _G.TargetAssistFOVColor
 
     if TargetAssistFOV.Visible then
         local viewportSize = Camera.ViewportSize
@@ -1432,7 +1360,7 @@ local function updateTargetAssist(dt)
         TargetAssist.LockStartedAt = 0
         TargetAssist.ReacquireAt = 0
         TargetAssist.State = "Idle"
-        resetMobileHeadState()
+        resetTargetHeadState()
         return
     end
 
@@ -1521,28 +1449,16 @@ local function updateTargetAssist(dt)
     if not targetPart or not hasLineOfSight(targetPart) then
         TargetAssist.CurrentTarget = nil
         TargetAssist.State = "Searching"
-        resetMobileHeadState()
+        resetTargetHeadState()
         return
     end
 
     local cameraPosition = Camera.CFrame.Position
-    local smoothness = math.max(0.01, tonumber(_G.TargetAssistSmoothness) or 8)
-
-    -- 自動單目標模式：首次鎖定約 0.1 秒完成轉向；持續追蹤約 0.05 秒完成主要轉向。
-    if _G.TargetAssistAutoSingleVisible == true then
-        local lockAge = math.max(0, now - (TargetAssist.LockStartedAt or now))
-        smoothness = lockAge < 0.1 and 30 or 60
-    end
+    -- Smoothness 越大，轉向速度越低；不再被自動單目標模式覆寫。
+    local smoothness = math.clamp(tonumber(_G.TargetAssistSmoothness) or 8, 1, 30)
     local predictedPosition
 
-    -- 手機專用強度：Aimbot 開啟即為強鎖，滑桿只調整跟隨力度。
-    if isMobileTouchMode() then
-        local strength = math.clamp(tonumber(_G.MobileAimStrength) or 100, 0, 100) / 100
-        -- 0% 保留極低跟隨，100% 接近直接鎖定。
-        local mobileSmooth = 0.35 + strength * 35
-        smoothness = math.max(smoothness, mobileSmooth)
-    end
-
+    -- Desktop-only aiming response is controlled by Smoothness.
     if _G.TargetAssistSecondaryLock then
         local elapsed = now - (TargetAssist.LockStartedAt or now)
         local delay = math.max(0, tonumber(_G.TargetAssistSecondaryDelay) or 0.10)
@@ -1558,21 +1474,21 @@ local function updateTargetAssist(dt)
             local blendAlpha = math.clamp((elapsed - delay) / blendTime, 0, 1)
             blendAlpha = blendAlpha * blendAlpha * (3 - 2 * blendAlpha)
             predictedPosition = primaryPosition:Lerp(secondaryPosition, blendAlpha)
-            smoothness = math.max(0.01, tonumber(_G.TargetAssistSecondarySmoothness) or smoothness)
+            smoothness = math.clamp(tonumber(_G.TargetAssistSecondarySmoothness) or smoothness, 1, 40)
         end
     else
         predictedPosition = getPredictedPosition(targetPart)
     end
 
-    -- 手機鎖頭完整狀態機：Body -> Head Candidate -> Head Lock -> Grace -> Reacquire。
-    if isMobileTouchMode() then
-        local headInfo = getMobileHeadLockInfo(character, screenCenter)
-        local headStrength = math.clamp(tonumber(_G.MobileHeadLockStrength) or 100, 0, 100) / 100
+    -- Desktop head-lock state machine: Body -> Head Lock -> Grace -> Reacquire.
+    do
+        local headInfo = getTargetHeadLockInfo(character, screenCenter)
+        local headStrength = math.clamp(tonumber(_G.TargetAssistHeadLockStrength) or 100, 0, 100) / 100
         local nowHead = os.clock()
         local qualified = headInfo and headInfo.Qualified and headStrength > 0
-        local grace = math.max(0, tonumber(_G.MobileHeadLockGrace) or 0.12)
-        local reacquireDelay = math.max(0, tonumber(_G.MobileHeadLockReacquireDelay) or 0.08)
-        local switchMargin = math.clamp(tonumber(_G.MobileHeadLockSwitchMargin) or 0.10, 0, 1)
+        local grace = math.max(0, tonumber(_G.TargetAssistHeadLockGrace) or 0.12)
+        local reacquireDelay = math.max(0, tonumber(_G.TargetAssistHeadLockReacquireDelay) or 0.08)
+        local switchMargin = math.clamp(tonumber(_G.TargetAssistHeadLockSwitchMargin) or 0.10, 0, 1)
 
         if qualified then
             local betterEnough = TargetAssist.LastHeadScore == math.huge
@@ -1613,12 +1529,14 @@ local function updateTargetAssist(dt)
                 or character:FindFirstChild("HumanoidRootPart")
             if body then predictedPosition = getPredictedPosition(body) end
         end
-        _G.MobileHeadLockState = TargetAssist.HeadState
+        _G.TargetAssistHeadLockState = TargetAssist.HeadState
     end
 
     predictedPosition += getHumanizedOffset(dt)
     local targetCFrame = CFrame.lookAt(cameraPosition, predictedPosition)
-    local alpha = 1 - math.exp(-smoothness * math.max(dt, 0))
+    -- 將平滑值轉為反比追蹤速度：值越大，alpha 越小，輔助效力越弱。
+    local response = (24 / math.max(smoothness, 1))
+    local alpha = 1 - math.exp(-response * math.max(dt, 0))
     Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, math.clamp(alpha, 0, 1))
 end
 
@@ -1634,7 +1552,7 @@ RunService:BindToRenderStep(
 -- Keybind Manager / Debug / ESP Performance / Target Weighting /
 -- Secondary Lock State / Notifications / UI Animation
 -- ============================================================
--- THIRD PERSON / MOBILE CAMERA CONTROL
+-- THIRD PERSON CAMERA CONTROL
 -- ============================================================
 _G.ThirdPersonEnabled = _G.ThirdPersonEnabled == true
 _G.ThirdPersonDistance = tonumber(_G.ThirdPersonDistance) or 8
@@ -2116,7 +2034,7 @@ local function argusRebuildBody()
             _G.TargetAssistRequireOnScreen=not _G.TargetAssistRequireOnScreen
             argusRebuildBody()
         end)
-        argusMakeSlider("Smoothness", "TargetAssistSmoothness", x, y+360, w, 1, 30, 0.5)
+        argusMakeSlider("Smoothness (higher = weaker)", "TargetAssistSmoothness", x, y+360, w, 1, 30, 0.5)
         argusMakeSlider("Secondary Smoothness", "TargetAssistSecondarySmoothness", x, y+406, w, 1, 40, 0.5)
         argusMakeSlider("FOV Radius", "TargetAssistFOVRadius", x, y+452, w, 20, 600, 5)
         argusMakeSlider("Max Distance", "TargetAssistMaxDistance", x, y+498, w, 0, 2000, 10)
@@ -2226,7 +2144,6 @@ local ArgusInput = UserInputService.InputBegan:Connect(function(input, processed
     if input.KeyCode == _G.ArgusUIKey then
         if _G.ArgusPrivacyCurtain then
             _G.ArgusPrivacyCurtain = false
-            if ArgusMobile.PrivacyCurtain then ArgusMobile.PrivacyCurtain.Visible = false end
         end
         ArgusUI.Open = not ArgusUI.Open
         ArgusUI.Anim.TargetOpen = ArgusUI.Open and 1 or 0
@@ -2497,952 +2414,6 @@ argusRebuildBody()
 argusToast("Crescent Hub ready")
 
 
--- =========================================================
--- ARGUS DEVICE DETECTION / FULL MOBILE UI
--- =========================================================
-local ArgusDevice = {
-    IsTouch = UserInputService.TouchEnabled,
-    HasKeyboard = UserInputService.KeyboardEnabled,
-    HasMouse = UserInputService.MouseEnabled,
-}
-
-if ArgusDevice.IsTouch and not ArgusDevice.HasKeyboard then
-    _G.ArgusDeviceType = "Mobile"
-elseif ArgusDevice.IsTouch and ArgusDevice.HasKeyboard then
-    _G.ArgusDeviceType = "Hybrid"
-else
-    _G.ArgusDeviceType = "Desktop"
-end
-
-_G.ArgusMobileUIEnabled = (_G.ArgusDeviceType ~= "Desktop")
-_G.ArgusMobileAimActive = false
-_G.ArgusInputSource = "Auto" -- Auto / Touch / MouseKeyboard
-_G.ArgusDeviceVersion = "Dual"
-
-local ArgusMobile = {
-    Gui = nil,
-    Frame = nil,
-    Scroll = nil,
-    Content = nil,
-    Tab = "Dashboard",
-    Visible = false,
-    Reopen = nil,
-    Dragging = false,
-    DragStart = nil,
-    FrameStart = nil,
-}
-
-local function argusGetUIParent()
-    return LocalPlayer:WaitForChild("PlayerGui")
-end
-
--- UI-only motion and styling helpers. Gameplay and external loading remain untouched.
-local TweenService = game:GetService("TweenService")
--- Crescent Hub palette: ice blue, black, and white, based on the supplied reference.
--- Gameplay overlay colors are intentionally kept separate from UI chrome.
-local ArgusUITheme = {
-    Panel = Color3.fromRGB(5, 7, 12),
-    Surface = Color3.fromRGB(13, 19, 28),
-    SurfaceHover = Color3.fromRGB(25, 45, 61),
-    Border = Color3.fromRGB(93, 142, 165),
-    Accent = Color3.fromRGB(174, 224, 255),
-    Text = Color3.fromRGB(248, 251, 255),
-    Muted = Color3.fromRGB(174, 190, 201),
-    GradientDark = Color3.fromRGB(5, 8, 14),
-    GradientMid = Color3.fromRGB(18, 43, 59),
-    GradientBright = Color3.fromRGB(174, 224, 255),
-    GradientWhite = Color3.fromRGB(248, 251, 255),
-    Radius = {Panel = 16, Card = 10, Control = 8, Compact = 6},
-    TextSize = {Title = 16, Body = 13, Label = 12, Caption = 11},
-    Spacing = {Panel = 14, Section = 8, Compact = 4},
-}
- 
-local function mobileGradient(object, colors, rotation)
-    local gradient = object:FindFirstChildOfClass("UIGradient")
-    if not gradient then
-        gradient = Instance.new("UIGradient")
-        gradient.Parent = object
-    end
-    gradient.Color = ColorSequence.new(colors)
-    gradient.Rotation = rotation or 0
-    return gradient
-end
-
-local function mobileApplyPanelGradient(object, rotation)
-    return mobileGradient(object, {
-        ColorSequenceKeypoint.new(0, ArgusUITheme.GradientMid),
-        ColorSequenceKeypoint.new(0.42, ArgusUITheme.Surface),
-        ColorSequenceKeypoint.new(0.48, ArgusUITheme.GradientDark),
-        ColorSequenceKeypoint.new(0.58, ArgusUITheme.Panel),
-        ColorSequenceKeypoint.new(1, ArgusUITheme.Panel),
-    }, rotation or 0)
-}
-
-local function mobileCorner(object, radius)
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, radius or 8)
-    corner.Parent = object
-    return corner
-end
-
-local function mobileStroke(object, color, transparency, thickness)
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = color or ArgusUITheme.Border
-    stroke.Transparency = transparency == nil and 0.15 or transparency
-    stroke.Thickness = thickness or 1
-    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    stroke.Parent = object
-    return stroke
-end
-
--- Keep at most one active UI tween per instance. Replacing an animation cancels the old
--- one first, preventing rapid input from leaving competing tweens behind.
-local ArgusActiveTweens = setmetatable({}, {__mode = "k"})
-local function mobileTween(object, duration, properties, style)
-    if not object or not object.Parent then return nil end
-    local previous = ArgusActiveTweens[object]
-    if previous then
-        pcall(function() previous:Cancel() end)
-        ArgusActiveTweens[object] = nil
-    end
-
-    local tweenDuration = math.max(0, tonumber(duration) or 0.16)
-    local runtimeFPS = tonumber(_G.ArgusRuntimeFPS)
-    if _G.ArgusLowEffects == true or (runtimeFPS and runtimeFPS < 30) then
-        tweenDuration = math.min(tweenDuration, 0.025)
-    end
-    local ok, tween = pcall(function()
-        return TweenService:Create(
-            object,
-            TweenInfo.new(tweenDuration, style or Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            properties
-        )
-    end)
-    if not ok or not tween then return nil end
-
-    ArgusActiveTweens[object] = tween
-    local completedConnection
-    completedConnection = tween.Completed:Connect(function()
-        if completedConnection then completedConnection:Disconnect() end
-        if ArgusActiveTweens[object] == tween then
-            ArgusActiveTweens[object] = nil
-        end
-    end)
-    tween:Play()
-    return tween
-end
-
-local function mobileClear(parent)
-    for _, child in ipairs(parent:GetChildren()) do
-        if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
-            child:Destroy()
-        end
-    end
-end
-
-local function mobileButton(parent, text, callback, height)
-    local b = Instance.new("TextButton")
-    b.BackgroundColor3 = ArgusUITheme.Surface
-    b.BorderSizePixel = 0
-    b.TextColor3 = ArgusUITheme.Text
-    b.Font = Enum.Font.GothamSemibold
-    b.TextSize = ArgusUITheme.TextSize.Body
-    b.Text = text
-    b.Size = UDim2.new(1,0,0,height or 38)
-    b.AutoButtonColor = false
-    b.Parent = parent
-    mobileCorner(b, ArgusUITheme.Radius.Card)
-    local outline = mobileStroke(b, ArgusUITheme.Border, 0.28, 1)
-    local buttonScale = Instance.new("UIScale")
-    buttonScale.Scale = 1
-    buttonScale.Parent = b
-
-    -- Mouse hover and touch press feedback share the same subtle ice-blue language.
-    b.MouseEnter:Connect(function()
-        mobileTween(b, 0.14, {BackgroundColor3 = ArgusUITheme.SurfaceHover})
-        mobileTween(outline, 0.14, {Color = ArgusUITheme.Accent, Transparency = 0.04, Thickness = 1.4})
-    end)
-    b.MouseLeave:Connect(function()
-        mobileTween(b, 0.16, {BackgroundColor3 = ArgusUITheme.Surface})
-        mobileTween(outline, 0.16, {Color = ArgusUITheme.Border, Transparency = 0.28, Thickness = 1})
-        mobileTween(buttonScale, 0.12, {Scale = 1})
-    end)
-    b.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch
-            or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            mobileTween(buttonScale, 0.07, {Scale = 0.975})
-            mobileTween(b, 0.08, {BackgroundColor3 = ArgusUITheme.SurfaceHover}, Enum.EasingStyle.Quad)
-            mobileTween(outline, 0.07, {Color = ArgusUITheme.GradientBright, Transparency = 0, Thickness = 1.6})
-        end
-    end)
-    b.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch
-            or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            mobileTween(buttonScale, 0.13, {Scale = 1})
-            mobileTween(b, 0.12, {BackgroundColor3 = ArgusUITheme.Surface})
-            mobileTween(outline, 0.13, {Color = ArgusUITheme.Accent, Transparency = 0.08, Thickness = 1.2})
-        end
-    end)
-    b.Activated:Connect(function()
-        mobileTween(outline, 0.08, {Color = ArgusUITheme.GradientBright, Transparency = 0})
-        task.delay(0.1, function()
-            if outline.Parent then
-                mobileTween(outline, 0.14, {Color = ArgusUITheme.Border, Transparency = 0.28, Thickness = 1})
-            end
-        end)
-        pcall(callback)
-    end)
-    return b
-end
-
-local function mobileLabel(parent, text, size, height)
-    local l = Instance.new("TextLabel")
-    l.BackgroundTransparency = 1
-    l.Size = UDim2.new(1,0,0,height or 28)
-    l.Font = Enum.Font.Gotham
-    l.TextSize = size or ArgusUITheme.TextSize.Label
-    l.TextColor3 = ArgusUITheme.Muted
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.TextWrapped = true
-    l.Text = text
-    l.Parent = parent
-    return l
-end
-
-local function mobileToggle(parent, label, key)
-    return mobileButton(parent, label .. ": " .. argusBoolText(_G[key]), function()
-        _G[key] = not _G[key]
-        if key == "ArgusPrivacyCurtain" and ArgusMobile.PrivacyCurtain then
-            ArgusMobile.PrivacyCurtain.Visible = _G.ArgusPrivacyCurtain == true
-        elseif key == "ArgusStreamMode" and _G.ArgusStreamMode then
-            ArgusUI.Open = false
-            ArgusUI.Anim.TargetOpen = 0
-        end
-        argusMobileRebuild()
-    end)
-end
-
-local function mobileCycle(parent, label, key, values)
-    return mobileButton(parent, label .. ": " .. tostring(_G[key]), function()
-        local index = 1
-        for i,v in ipairs(values) do
-            if v == _G[key] then index = i break end
-        end
-        _G[key] = values[index % #values + 1]
-        argusMobileRebuild()
-    end)
-end
-
-local function mobileNumber(parent, label, key, min, max, step)
-    local row = Instance.new("Frame")
-    row.BackgroundColor3 = ArgusUITheme.Surface
-    row.BorderSizePixel = 0
-    row.Size = UDim2.new(1,0,0,42)
-    row.Parent = parent
-    mobileCorner(row, ArgusUITheme.Radius.Control)
-    mobileStroke(row, ArgusUITheme.Border, 0.35, 1)
-
-    local name = Instance.new("TextLabel")
-    name.BackgroundTransparency = 1
-    name.Position = UDim2.fromOffset(8,0)
-    name.Size = UDim2.new(0.48,0,1,0)
-    name.Font = Enum.Font.GothamSemibold
-    name.TextSize = 12
-    name.TextColor3 = ArgusUITheme.Text
-    name.TextXAlignment = Enum.TextXAlignment.Left
-    name.Text = label
-    name.Parent = row
-
-    local minus = Instance.new("TextButton")
-    minus.BackgroundColor3 = ArgusUITheme.Panel
-    minus.BorderSizePixel = 0
-    minus.TextColor3 = ArgusUITheme.Text
-    minus.Font = Enum.Font.GothamBold
-    minus.TextSize = 16
-    minus.Text = "−"
-    minus.Size = UDim2.fromOffset(32,30)
-    minus.Position = UDim2.new(1,-148,0,6)
-    minus.Parent = row
-    mobileCorner(minus, ArgusUITheme.Radius.Compact)
-    mobileStroke(minus, ArgusUITheme.Border, 0.4, 1)
-
-    local box = Instance.new("TextBox")
-    box.BackgroundColor3 = ArgusUITheme.Panel
-    box.BorderColor3 = ArgusUITheme.Border
-    box.TextColor3 = ArgusUITheme.Text
-    box.Font = Enum.Font.Gotham
-    box.TextSize = 12
-    box.Text = tostring(_G[key])
-    box.ClearTextOnFocus = false
-    box.Size = UDim2.fromOffset(78,30)
-    box.Position = UDim2.new(1,-112,0,6)
-    box.Parent = row
-    mobileCorner(box, ArgusUITheme.Radius.Compact)
-    mobileStroke(box, ArgusUITheme.Border, 0.2, 1)
-
-    local plus = Instance.new("TextButton")
-    plus.BackgroundColor3 = ArgusUITheme.Panel
-    plus.BorderSizePixel = 0
-    plus.TextColor3 = ArgusUITheme.Text
-    plus.Font = Enum.Font.GothamBold
-    plus.TextSize = 16
-    plus.Text = "+"
-    plus.Size = UDim2.fromOffset(32,30)
-    plus.Position = UDim2.new(1,-32,0,6)
-    plus.Parent = row
-    mobileCorner(plus, ArgusUITheme.Radius.Compact)
-    mobileStroke(plus, ArgusUITheme.Border, 0.4, 1)
-
-    local function setValue(v)
-        v = tonumber(v) or tonumber(_G[key]) or min
-        v = math.clamp(v, min, max)
-        if step and step > 0 then
-            v = math.floor(v / step + 0.5) * step
-            v = math.clamp(v, min, max)
-        end
-        _G[key] = v
-        if key == "TargetAssistOffsetX" or key == "TargetAssistOffsetY" or key == "TargetAssistOffsetZ" then
-            argusMobileSyncAimValues()
-        end
-        box.Text = tostring(v)
-    end
-
-    minus.Activated:Connect(function()
-        setValue((tonumber(_G[key]) or min) - step)
-    end)
-    plus.Activated:Connect(function()
-        setValue((tonumber(_G[key]) or min) + step)
-    end)
-    box.FocusLost:Connect(function()
-        setValue(box.Text)
-    end)
-
-    return row
-end
-
-local function argusMobileSyncAimValues()
-    _G.TargetAssistOffset = Vector3.new(
-        tonumber(_G.TargetAssistOffsetX) or 0,
-        tonumber(_G.TargetAssistOffsetY) or 0,
-        tonumber(_G.TargetAssistOffsetZ) or 0
-    )
-end
-
-_G.TargetAssistOffsetX = _G.TargetAssistOffset.X
-_G.TargetAssistOffsetY = _G.TargetAssistOffset.Y
-_G.TargetAssistOffsetZ = _G.TargetAssistOffset.Z
-
-function argusMobileRebuild()
-    argusMobileSyncAimValues()
-    if not ArgusMobile.Content then return end
-    mobileClear(ArgusMobile.Content)
-
-    mobileLabel(ArgusMobile.Content, "CRESCENT HUB  /  " .. tostring(_G.ArgusDeviceType), 11, 25)
-
-    if ArgusMobile.Tab == "Dashboard" then
-        local status,target = argusGetTargetStatus()
-        mobileLabel(ArgusMobile.Content, "STATUS: "..status, 18, 35)
-        mobileLabel(ArgusMobile.Content, "Target: "..(target and target.Name or "None"), 12, 26)
-        mobileLabel(ArgusMobile.Content, string.format("FPS: %.0f", ArgusUI.FPS), 12, 26)
-        mobileLabel(ArgusMobile.Content, "ESP Backend: "..tostring(_G.ArgusDrawingBackend or "Unknown"), 11, 24)
-        mobileLabel(ArgusMobile.Content, "ESP Rate: "..string.format("%.0f Hz", tonumber(_G.ArgusESPEffectiveRate) or tonumber(_G.ArgusESPUpdateRate) or 60), 11, 24)
-        mobileLabel(ArgusMobile.Content, "Aim State: "..tostring(TargetAssist.State), 11, 24)
-        mobileLabel(ArgusMobile.Content, "Head State: "..tostring(TargetAssist.HeadState), 11, 24)
-        mobileLabel(ArgusMobile.Content, "Touch Aim: "..argusBoolText(MobileTouchState.Active), 11, 24)
-        mobileButton(ArgusMobile.Content, "AIM: "..argusBoolText(_G.TargetAssistEnabled), function()
-            _G.TargetAssistEnabled = not _G.TargetAssistEnabled
-            _G.ArgusMobileAimActive = _G.TargetAssistEnabled
-            if not _G.TargetAssistEnabled then TargetAssist.CurrentTarget=nil end
-            argusMobileRebuild()
-        end)
-        mobileButton(ArgusMobile.Content,"Third Person / 第三人稱: "..argusBoolText(ThirdPersonState.Enabled),function() toggleThirdPerson(); argusMobileRebuild() end)
-        mobileNumber(ArgusMobile.Content,"Third Person Distance / 第三人稱距離","ThirdPersonDistance",4,20,0.5)
-        mobileCycle(ArgusMobile.Content,"Aim Touch Region / 觸控瞄準區","ArgusMobileAimRegion",{"RightHalf","FullScreen"})
-        mobileButton(ArgusMobile.Content, "Visual Hide: "..argusBoolText(_G.TargetAssistVisualsHidden), function()
-            _G.TargetAssistVisualsHidden = not _G.TargetAssistVisualsHidden
-            argusMobileRebuild()
-        end)
-        mobileButton(ArgusMobile.Content, "FOV: "..argusBoolText(_G.TargetAssistFOVEnabled), function()
-            _G.TargetAssistFOVEnabled = not _G.TargetAssistFOVEnabled
-            argusMobileRebuild()
-        end)
-        mobileLabel(ArgusMobile.Content, "所有 ESP、瞄準與參數都由同一套核心控制。", 11, 42)
-
-    elseif ArgusMobile.Tab == "Visuals" then
-        mobileLabel(ArgusMobile.Content, "VISUAL MODULES", 14, 30)
-        local rows = {
-            {"ESPEnabled","ESP Master"},{"BoxESP","Box"},{"BoxFilled","Filled Box"},
-            {"HighlightESP","Highlight"},{"HealthESP","Health"},{"NameESP","Name"},
-            {"ToolESP","Tool"},{"TracerESP","Tracer"},{"SkeletonESP","Skeleton"},
-            {"TeamCheck","Team Check"},{"TeamColorESP","Team Color"},
-        }
-        for _,row in ipairs(rows) do mobileToggle(ArgusMobile.Content,row[2],row[1]) end
-        mobileLabel(ArgusMobile.Content, "Skeleton 使用原本 Drawing 骨骼系統，不移除。", 11, 34)
-
-    elseif ArgusMobile.Tab == "Target" then
-        mobileLabel(ArgusMobile.Content, "TARGET ASSIST", 14, 30)
-        mobileToggle(ArgusMobile.Content,"Aimbot","TargetAssistEnabled")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        mobileNumber(ArgusMobile.Content,"Aim Strength / 鎖定強度","MobileAimStrength",0,100,5)
-        mobileNumber(ArgusMobile.Content,"Head Lock Strength / 鎖頭強度","MobileHeadLockStrength",0,100,5)
-        mobileNumber(ArgusMobile.Content,"Head Threshold / 鎖頭門檻","MobileHeadLockThreshold",0,100,5)
-        mobileNumber(ArgusMobile.Content,"Head Grace / 鎖頭容錯","MobileHeadLockGrace",0,0.5,0.01)
-        mobileNumber(ArgusMobile.Content,"Head Switch Margin / 鎖頭滯後","MobileHeadLockSwitchMargin",0,0.5,0.01)
-        mobileNumber(ArgusMobile.Content,"Head Reacquire / 鎖頭重取","MobileHeadLockReacquireDelay",0,0.5,0.01)
-        mobileLabel(ArgusMobile.Content,"Head State: "..tostring(_G.MobileHeadLockState),11,26)
-        mobileCycle(ArgusMobile.Content,"Target Part","TargetAssistPart",{"Head","UpperTorso","LowerTorso","HumanoidRootPart","Auto"})
-        mobileCycle(ArgusMobile.Content,"Activation","TargetAssistActivationMode",{"RightMouse","Toggle","Both"})
-        mobileToggle(ArgusMobile.Content,"Wall Check","TargetAssistWallCheck")
-        mobileToggle(ArgusMobile.Content,"Team Check","TargetAssistTeamCheck")
-        mobileToggle(ArgusMobile.Content,"On Screen Only","TargetAssistRequireOnScreen")
-        mobileToggle(ArgusMobile.Content,"FOV","TargetAssistFOVEnabled")
-        mobileToggle(ArgusMobile.Content,"Prediction","TargetAssistPredictionEnabled")
-        mobileToggle(ArgusMobile.Content,"Movement Prediction","TargetAssistMovementPrediction")
-        mobileToggle(ArgusMobile.Content,"Secondary Lock / 二次定位","TargetAssistSecondaryLock")
-        mobileToggle(ArgusMobile.Content,"Auto Head","TargetAssistAutoHead")
-        mobileToggle(ArgusMobile.Content,"Humanized Aim","TargetAssistHumanizedAim")
-        mobileCycle(ArgusMobile.Content,"Selection","ArgusTargetSelectionMode",{"Crosshair","Distance","Health","Balanced"})
-        mobileCycle(ArgusMobile.Content,"Auto Body Part","TargetAssistAutoBodyPart",{"UpperTorso","HumanoidRootPart","LowerTorso"})
-        mobileCycle(ArgusMobile.Content,"Secondary Part / 二次定位部位","TargetAssistSecondaryPart",{"Head","UpperTorso","LowerTorso","HumanoidRootPart"})
-        mobileCycle(ArgusMobile.Content,"Secondary Primary / 二次定位初始部位","TargetAssistSecondaryPrimaryPart",{"UpperTorso","HumanoidRootPart","LowerTorso","Head"})
-        mobileNumber(ArgusMobile.Content,"Smoothness","TargetAssistSmoothness",1,30,0.5)
-        mobileNumber(ArgusMobile.Content,"Secondary Smoothness","TargetAssistSecondarySmoothness",1,40,0.5)
-        mobileNumber(ArgusMobile.Content,"FOV Radius","TargetAssistFOVRadius",20,600,5)
-        mobileNumber(ArgusMobile.Content,"Max Distance","TargetAssistMaxDistance",0,2000,10)
-        mobileNumber(ArgusMobile.Content,"Prediction Time","TargetAssistPredictionTime",0,0.5,0.01)
-        mobileNumber(ArgusMobile.Content,"Projectile Speed","TargetAssistProjectileSpeed",0,10000,50)
-        mobileNumber(ArgusMobile.Content,"Secondary Delay / 二次定位延遲","TargetAssistSecondaryDelay",0,0.5,0.01)
-        mobileNumber(ArgusMobile.Content,"Secondary Blend / 二次定位過渡","TargetAssistSecondaryBlendTime",0.01,0.5,0.01)
-        mobileNumber(ArgusMobile.Content,"Aim Error","TargetAssistAimError",0,0.2,0.001)
-        mobileNumber(ArgusMobile.Content,"Jitter Speed","TargetAssistJitterSpeed",0,30,0.5)
-        mobileNumber(ArgusMobile.Content,"Offset X","TargetAssistOffsetX",-10,10,0.1)
-        mobileNumber(ArgusMobile.Content,"Offset Y","TargetAssistOffsetY",-10,10,0.1)
-        mobileNumber(ArgusMobile.Content,"Offset Z","TargetAssistOffsetZ",-10,10,0.1)
-        mobileNumber(ArgusMobile.Content,"FOV Thickness","TargetAssistFOVThickness",1,5,1)
-        mobileNumber(ArgusMobile.Content,"FOV Transparency","TargetAssistFOVTransparency",0,1,0.05)
-        mobileToggle(ArgusMobile.Content,"FOV Filled","TargetAssistFOVFilled")
-
-    elseif ArgusMobile.Tab == "Settings" then
-        mobileLabel(ArgusMobile.Content,"FINE CONTROL",14,30)
-        mobileToggle(ArgusMobile.Content,"ESP Performance","ArgusESPPerformance")
-        mobileToggle(ArgusMobile.Content,"ESP Adaptive Rate","ArgusESPAdaptive")
-        mobileCycle(ArgusMobile.Content,"ESP Update Rate","ArgusESPUpdateRate",{15,30,60,120})
-        mobileToggle(ArgusMobile.Content,"Target Cache","ArgusTargetCacheEnabled")
-        mobileToggle(ArgusMobile.Content,"State Watchdog","ArgusStateWatchdog")
-        mobileToggle(ArgusMobile.Content,"Camera Recovery","ArgusCameraRecovery")
-        mobileToggle(ArgusMobile.Content,"Fail Safe","ArgusFailSafe")
-        mobileToggle(ArgusMobile.Content,"Debug Mode","ArgusDebugMode")
-        mobileToggle(ArgusMobile.Content,"Low Effects / 低特效","ArgusLowEffects")
-        mobileToggle(ArgusMobile.Content,"Stream Privacy Mode / 直播隱私模式","ArgusStreamMode")
-        mobileToggle(ArgusMobile.Content,"Privacy Curtain / 截圖遮罩","ArgusPrivacyCurtain")
-        mobileLabel(ArgusMobile.Content,"直播模式會隱藏 ESP 視覺；截圖遮罩會以不透明遮罩蓋住遊戲畫面。Roblox 無法保證阻止外部截圖。",11,46)
-        mobileLabel(ArgusMobile.Content,"UI / device: "..tostring(_G.ArgusDeviceType),11,28)
-        mobileLabel(ArgusMobile.Content,"按住設定的觸控區域啟動瞄準；放開立即停止。",11,34)
-        mobileNumber(ArgusMobile.Content,"Aim Touch Start X","ArgusMobileAimTouchMinX",0.25,0.8,0.05)
-        mobileNumber(ArgusMobile.Content,"Weight Crosshair","ArgusWeightCrosshair",0,2,0.05)
-        mobileNumber(ArgusMobile.Content,"Weight Distance","ArgusWeightDistance",0,2,0.05)
-        mobileNumber(ArgusMobile.Content,"Weight Health","ArgusWeightHealth",0,2,0.05)
-        mobileNumber(ArgusMobile.Content,"Weight Custom","ArgusWeightCustom",0,2,0.05)
-
-    elseif ArgusMobile.Tab == "Profiles" then
-        mobileLabel(ArgusMobile.Content,"PROFILE MANAGER",14,30)
-        mobileLabel(ArgusMobile.Content,"Current: "..tostring(_G.ArgusProfile),12,28)
-        for _,name in ipairs({"Default","Profile 1","Profile 2","Profile 3"}) do
-            mobileButton(ArgusMobile.Content,"Load "..name,function()
-                if ArgusProfiles[name] then
-                    argusApplyProfile(ArgusProfiles[name])
-                    _G.ArgusProfile=name
-                    _G.ArgusMobileAimActive=_G.TargetAssistEnabled
-                    argusMobileRebuild()
-                end
-            end)
-            mobileButton(ArgusMobile.Content,"Save "..name,function()
-                ArgusProfiles[name]=argusCaptureProfile()
-                _G.ArgusProfile=name
-                argusMobileRebuild()
-            end)
-        end
-
-    elseif ArgusMobile.Tab == "Keybinds" then
-        mobileLabel(ArgusMobile.Content,"KEYBINDS",14,30)
-        mobileLabel(ArgusMobile.Content,"Desktop UI: ".._G.ArgusUIKey.Name,12,26)
-        mobileCycle(ArgusMobile.Content,"Aim Key","TargetAssistToggleKey",{Enum.KeyCode.Q,Enum.KeyCode.E,Enum.KeyCode.T,Enum.KeyCode.LeftAlt})
-        mobileCycle(ArgusMobile.Content,"Input Source / 輸入來源","ArgusInputSource",{"Auto","Touch","MouseKeyboard"})
-        mobileLabel(ArgusMobile.Content,"Auto：手機使用觸控；Hybrid 可同時保留滑鼠鍵盤。",11,38)
-        mobileLabel(ArgusMobile.Content,"RightShift = Visual Hide",11,28)
-        mobileLabel(ArgusMobile.Content,"面板關閉後，右上角 ARGUS 可重新開啟。",11,34)
-
-    elseif ArgusMobile.Tab == "Debug" then
-        local status,target=argusGetTargetStatus()
-        local char=target and target.Character
-        local root=char and char:FindFirstChild("HumanoidRootPart")
-        local localChar=LocalPlayer.Character
-        local localRoot=localChar and localChar:FindFirstChild("HumanoidRootPart")
-        local distance=root and localRoot and (root.Position-localRoot.Position).Magnitude or 0
-        mobileLabel(ArgusMobile.Content,"DEBUG / DIAGNOSTICS",14,30)
-        mobileLabel(ArgusMobile.Content,"State: "..status,13,28)
-        mobileLabel(ArgusMobile.Content,"Target: "..(target and target.Name or "None"),12,26)
-        mobileLabel(ArgusMobile.Content,string.format("Distance: %.1f",distance),12,26)
-        mobileLabel(ArgusMobile.Content,"FOV: "..tostring(_G.TargetAssistFOVRadius),12,26)
-        mobileLabel(ArgusMobile.Content,"Selection: "..tostring(_G.ArgusTargetSelectionMode),12,26)
-        mobileLabel(ArgusMobile.Content,"ESP Update: "..tostring(_G.ArgusESPUpdateRate),12,26)
-        mobileLabel(ArgusMobile.Content,"ESP Effective: "..string.format("%.0f Hz", tonumber(_G.ArgusESPEffectiveRate) or tonumber(_G.ArgusESPUpdateRate) or 60),12,26)
-        mobileLabel(ArgusMobile.Content,"ESP Backend: "..tostring(_G.ArgusDrawingBackend or "Unknown"),12,26)
-        mobileLabel(ArgusMobile.Content,"Aim State: "..tostring(TargetAssist.State),12,26)
-        mobileLabel(ArgusMobile.Content,"Head State: "..tostring(TargetAssist.HeadState),12,26)
-        mobileLabel(ArgusMobile.Content,"Touch Active: "..argusBoolText(MobileTouchState.Active),12,26)
-        mobileLabel(ArgusMobile.Content,"Device: "..tostring(_G.ArgusDeviceType),12,26)
-        mobileLabel(ArgusMobile.Content,"Skeleton: "..argusBoolText(_G.SkeletonESP),12,26)
-    end
-end
-
-local function argusCreateMobileUI()
-    if not _G.ArgusMobileUIEnabled then return end
-    if ArgusMobile.Gui then
-        ArgusMobile.Gui.Enabled=true
-        return
-    end
-
-    -- A previous execution may leave this GUI in PlayerGui because local Lua
-    -- state is recreated on rerun. Destroy the stale copy before rebuilding.
-    local playerGui = argusGetUIParent()
-    local staleGui = playerGui:FindFirstChild("ArgusFullControlUI")
-    if staleGui then staleGui:Destroy() end
-
-    local gui=Instance.new("ScreenGui")
-    gui.Name="ArgusFullControlUI"
-    gui.ResetOnSpawn=false
-    -- Respect Roblox mobile top-bar / safe-area insets.
-    gui.IgnoreGuiInset=false
-    pcall(function()
-        gui.ScreenInsets=Enum.ScreenInsets.DeviceSafeInsets
-    end)
-    gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
-    gui.DisplayOrder=999999
-    gui.ResetOnSpawn=false
-    gui.Parent=argusGetUIParent()
-    ArgusMobile.Gui=gui
-
-    -- Manual privacy curtain: captures show the opaque cover while enabled.
-    -- This is a visual mask, not OS-level screenshot prevention.
-    local privacyCurtain=Instance.new("Frame")
-    privacyCurtain.Name="PrivacyCurtain"
-    privacyCurtain.Size=UDim2.fromScale(1,1)
-    privacyCurtain.Position=UDim2.fromScale(0,0)
-    privacyCurtain.BackgroundColor3=Color3.fromRGB(0,0,0)
-    privacyCurtain.BackgroundTransparency=0
-    privacyCurtain.BorderSizePixel=0
-    privacyCurtain.Visible=_G.ArgusPrivacyCurtain == true
-    privacyCurtain.Active=true
-    privacyCurtain.ZIndex=1000
-    privacyCurtain.Parent=gui
-    local privacyText=Instance.new("TextLabel")
-    privacyText.Name="PrivacyCurtainLabel"
-    privacyText.BackgroundTransparency=1
-    privacyText.Size=UDim2.fromScale(1,1)
-    privacyText.Font=Enum.Font.GothamBold
-    privacyText.Text="PRIVACY MODE  •  CLOSE CURTAIN IN SETTINGS TO RESUME"
-    privacyText.TextColor3=Color3.fromRGB(248,251,255)
-    privacyText.TextSize=16
-    privacyText.TextWrapped=true
-    privacyText.ZIndex=1001
-    privacyText.Parent=privacyCurtain
-
-    local privacyDismiss=Instance.new("TextButton")
-    privacyDismiss.Name="DismissPrivacyCurtain"
-    privacyDismiss.AnchorPoint=Vector2.new(0.5,0.5)
-    privacyDismiss.Position=UDim2.fromScale(0.5,0.58)
-    privacyDismiss.Size=UDim2.fromOffset(180,42)
-    privacyDismiss.BackgroundColor3=Color3.fromRGB(20,35,48)
-    privacyDismiss.BorderSizePixel=0
-    privacyDismiss.Font=Enum.Font.GothamSemibold
-    privacyDismiss.Text="RESUME GAME"
-    privacyDismiss.TextColor3=Color3.fromRGB(248,251,255)
-    privacyDismiss.TextSize=14
-    privacyDismiss.ZIndex=1002
-    privacyDismiss.Parent=privacyCurtain
-    privacyDismiss.Activated:Connect(function()
-        _G.ArgusPrivacyCurtain = false
-        privacyCurtain.Visible = false
-    end)
-    ArgusMobile.PrivacyCurtain=privacyCurtain
-
-    local frame=Instance.new("Frame")
-    frame.Name="ControlPanel"
-    -- Use a top-left anchor so drag coordinates and resize coordinates always
-    -- refer to the same point. This prevents the mobile panel from jumping.
-    frame.AnchorPoint=Vector2.new(0,0)
-    frame.BackgroundColor3=ArgusUITheme.Panel
-    frame.BorderSizePixel=0
-    frame.Visible=false
-    frame.ClipsDescendants=true
-    frame.Parent=gui
-    mobileCorner(frame, ArgusUITheme.Radius.Panel)
-    mobileStroke(frame, ArgusUITheme.Border, 0.04, 1.35)
-    mobileApplyPanelGradient(frame, 35)
-    ArgusMobile.Frame=frame
-
-    local panelScale = Instance.new("UIScale")
-    panelScale.Scale = 0.96
-    panelScale.Parent = frame
-    local panelTween
-
-    local function argusApplyResponsiveSize()
-        local camera = workspace.CurrentCamera
-        local viewport = camera and camera.ViewportSize or Vector2.new(1280,720)
-        local touchOnly = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-
-        -- Compact mobile layout: never occupy most of the entire screen.
-        local width = math.min(touchOnly and 460 or 560, math.max(300, viewport.X * (touchOnly and 0.86 or 0.72)))
-        local height = math.min(touchOnly and 620 or 720, math.max(430, viewport.Y * (touchOnly and 0.78 or 0.78)))
-        frame.Size = UDim2.fromOffset(width,height)
-
-        -- Always start / reset at the center. While dragging, preserve the
-        -- current position and only clamp it back into the safe viewport.
-        if not ArgusMobile.Dragging then
-            frame.Position=UDim2.fromOffset(
-                math.max(6,(viewport.X-width)*0.5),
-                math.max(6,(viewport.Y-height)*0.5)
-            )
-        else
-            local pos=frame.AbsolutePosition
-            frame.Position=UDim2.fromOffset(
-                math.clamp(pos.X,6,math.max(6,viewport.X-width-6)),
-                math.clamp(pos.Y,6,math.max(6,viewport.Y-height-6))
-            )
-        end
-    end
-
-    -- Keep responsive sizing attached to the active camera, including camera replacement.
-    -- Disconnect the previous camera's viewport listener to avoid stale connections.
-    local viewportConnection
-    local cameraChangedConnection
-    -- Global input listeners outlive their UI objects, so track and release them explicitly.
-    local dragConnections = {}
-    local function trackDragConnection(connection)
-        if connection then table.insert(dragConnections, connection) end
-        return connection
-    end
-    local function bindViewportCamera(camera)
-        if viewportConnection then
-            viewportConnection:Disconnect()
-            viewportConnection = nil
-        end
-        if camera then
-            viewportConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(argusApplyResponsiveSize)
-        end
-        argusApplyResponsiveSize()
-    end
-
-    bindViewportCamera(workspace.CurrentCamera)
-    cameraChangedConnection = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-        bindViewportCamera(workspace.CurrentCamera)
-    end)
-
-    -- If this GUI is destroyed during a script reload, release the camera listeners too.
-    gui.Destroying:Connect(function()
-        if viewportConnection then
-            viewportConnection:Disconnect()
-            viewportConnection = nil
-        end
-        if cameraChangedConnection then
-            cameraChangedConnection:Disconnect()
-            cameraChangedConnection = nil
-        end
-        for _, connection in ipairs(dragConnections) do
-            pcall(function() connection:Disconnect() end)
-        end
-        table.clear(dragConnections)
-    end)
-    task.defer(argusApplyResponsiveSize)
-
-    local sizeConstraint=Instance.new("UISizeConstraint")
-    sizeConstraint.MinSize=Vector2.new(300,430)
-    sizeConstraint.MaxSize=Vector2.new(520,760)
-    sizeConstraint.Parent=frame
-
-    local title=Instance.new("TextButton")
-    title.Name="DragHeader"
-    title.BackgroundColor3=ArgusUITheme.Surface
-    title.BorderSizePixel=0
-    title.Size=UDim2.new(1,0,0,46)
-    title.Text="CRESCENT HUB  /  "..tostring(_G.ArgusDeviceType).."  /  "..tostring(_G.ArgusVersion or "v0.0.01")
-    title.TextColor3=ArgusUITheme.Text
-    title.TextSize=ArgusUITheme.TextSize.Title
-    title.Font=Enum.Font.GothamBold
-    title.TextXAlignment=Enum.TextXAlignment.Left
-    title.AutoButtonColor=false
-    title.Parent=frame
-    mobileCorner(title, 12)
-    mobileGradient(title, {
-        ColorSequenceKeypoint.new(0, ArgusUITheme.GradientBright),
-        ColorSequenceKeypoint.new(0.08, ArgusUITheme.GradientMid),
-        ColorSequenceKeypoint.new(0.44, ArgusUITheme.Surface),
-        ColorSequenceKeypoint.new(0.5, ArgusUITheme.GradientDark),
-        ColorSequenceKeypoint.new(1, ArgusUITheme.Panel),
-    }, 0)
-
-    local padding=Instance.new("UIPadding")
-    padding.PaddingLeft=UDim.new(0,14)
-    padding.Parent=title
-
-    local tabs=Instance.new("ScrollingFrame")
-    tabs.BackgroundColor3=ArgusUITheme.Panel
-    tabs.BorderSizePixel=0
-    mobileGradient(tabs, {
-        ColorSequenceKeypoint.new(0, ArgusUITheme.Surface),
-        ColorSequenceKeypoint.new(0.46, ArgusUITheme.GradientDark),
-        ColorSequenceKeypoint.new(0.54, ArgusUITheme.Panel),
-        ColorSequenceKeypoint.new(1, ArgusUITheme.Panel),
-    }, 0)
-    tabs.Position=UDim2.fromOffset(0,46)
-    tabs.Size=UDim2.new(1,0,0,42)
-    tabs.ScrollBarThickness=2
-    tabs.ScrollingDirection=Enum.ScrollingDirection.X
-    tabs.AutomaticCanvasSize=Enum.AutomaticSize.X
-    tabs.CanvasSize=UDim2.new()
-    tabs.Parent=frame
-
-    local tabLayout=Instance.new("UIListLayout")
-    tabLayout.FillDirection=Enum.FillDirection.Horizontal
-    tabLayout.Padding=UDim.new(0,ArgusUITheme.Spacing.Compact)
-    tabLayout.Parent=tabs
-
-    local tabNames={"Dashboard","Visuals","Target","Settings","Profiles","Keybinds","Debug"}
-    for _,name in ipairs(tabNames) do
-        local b=Instance.new("TextButton")
-        b.Size=UDim2.fromOffset(92,38)
-        b.BackgroundColor3=(name==ArgusMobile.Tab) and ArgusUITheme.SurfaceHover or ArgusUITheme.Surface
-        b.BorderSizePixel=0
-        b.TextColor3=ArgusUITheme.Text
-        b.Font=Enum.Font.GothamSemibold
-        b.TextSize=11
-        b.Text=name
-        b.Parent=tabs
-        mobileCorner(b, 10)
-        local tabStroke = mobileStroke(b, (name==ArgusMobile.Tab) and ArgusUITheme.Accent or ArgusUITheme.Border, (name==ArgusMobile.Tab) and 0.04 or 0.5, 1)
-        local tabScale = Instance.new("UIScale")
-        tabScale.Scale = 1
-        tabScale.Parent = b
-        b.MouseEnter:Connect(function()
-            if ArgusMobile.Tab ~= name then
-                mobileTween(b, 0.12, {BackgroundColor3 = ArgusUITheme.SurfaceHover})
-                mobileTween(tabStroke, 0.12, {Color = ArgusUITheme.Accent, Transparency = 0.18, Thickness = 1.25})
-            end
-        end)
-        b.MouseLeave:Connect(function()
-            if ArgusMobile.Tab ~= name then
-                mobileTween(b, 0.14, {BackgroundColor3 = ArgusUITheme.Surface})
-                mobileTween(tabStroke, 0.14, {Color = ArgusUITheme.Border, Transparency = 0.5, Thickness = 1})
-            end
-        end)
-        b.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1
-                or input.UserInputType == Enum.UserInputType.Touch then
-                mobileTween(tabScale, 0.06, {Scale = 0.96})
-            end
-        end)
-        b.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1
-                or input.UserInputType == Enum.UserInputType.Touch then
-                mobileTween(tabScale, 0.12, {Scale = 1})
-            end
-        end)
-        b.Activated:Connect(function()
-            mobileTween(tabStroke, 0.08, {Color = ArgusUITheme.GradientBright, Transparency = 0})
-            ArgusMobile.Tab=name
-            argusMobileRebuild()
-            for _,other in ipairs(tabs:GetChildren()) do
-                if other:IsA("TextButton") then
-                    local selected = other == b
-                    mobileTween(other, 0.18, {BackgroundColor3 = selected and ArgusUITheme.SurfaceHover or ArgusUITheme.Surface})
-                    local otherStroke = other:FindFirstChildOfClass("UIStroke")
-                    if otherStroke then
-                        mobileTween(otherStroke, 0.18, {
-                            Color = selected and ArgusUITheme.Accent or ArgusUITheme.Border,
-                            Transparency = selected and 0.05 or 0.5,
-                        })
-                    end
-                end
-            end
-        end)
-    end
-
-    local scroll=Instance.new("ScrollingFrame")
-    scroll.Name="Content"
-    scroll.Position=UDim2.fromOffset(10,94)
-    scroll.Size=UDim2.new(1,-20,1,-104)
-    scroll.BackgroundColor3=ArgusUITheme.Panel
-    scroll.BorderSizePixel=0
-    mobileGradient(scroll, {
-        ColorSequenceKeypoint.new(0, ArgusUITheme.Surface),
-        ColorSequenceKeypoint.new(0.18, ArgusUITheme.Panel),
-        ColorSequenceKeypoint.new(0.48, ArgusUITheme.GradientDark),
-        ColorSequenceKeypoint.new(0.54, ArgusUITheme.Panel),
-        ColorSequenceKeypoint.new(1, ArgusUITheme.Panel),
-    }, 90)
-    scroll.ScrollBarThickness=5
-    scroll.AutomaticCanvasSize=Enum.AutomaticSize.Y
-    scroll.CanvasSize=UDim2.new()
-    scroll.Parent=frame
-    ArgusMobile.Scroll=scroll
-
-    local content=Instance.new("Frame")
-    content.BackgroundTransparency=1
-    content.Size=UDim2.new(1,-16,0,0)
-    content.AutomaticSize=Enum.AutomaticSize.Y
-    content.Parent=scroll
-    ArgusMobile.Content=content
-
-    local layout=Instance.new("UIListLayout")
-    layout.Padding=UDim.new(0,ArgusUITheme.Spacing.Compact + 2)
-    layout.Parent=content
-
-    local contentPadding=Instance.new("UIPadding")
-    contentPadding.PaddingTop=UDim.new(0,ArgusUITheme.Spacing.Section)
-    contentPadding.PaddingBottom=UDim.new(0,12)
-    contentPadding.PaddingLeft=UDim.new(0,2)
-    contentPadding.PaddingRight=UDim.new(0,2)
-    contentPadding.Parent=content
-
-    local close=Instance.new("TextButton")
-    close.Text="×"
-    close.TextColor3=Color3.fromRGB(255,255,255)
-    close.TextSize=22
-    close.Font=Enum.Font.GothamBold
-    close.BackgroundTransparency=1
-    close.Size=UDim2.fromOffset(42,42)
-    close.Position=UDim2.new(1,-45,0,2)
-    close.Parent=frame
-    close.ZIndex=5
-    local closeStroke = mobileStroke(close, ArgusUITheme.Border, 0.55, 1)
-    mobileCorner(close, 10)
-    close.MouseEnter:Connect(function()
-        mobileTween(close, 0.12, {BackgroundTransparency = 0, BackgroundColor3 = ArgusUITheme.SurfaceHover})
-        mobileTween(closeStroke, 0.12, {Color = ArgusUITheme.Accent, Transparency = 0.05})
-    end)
-    close.MouseLeave:Connect(function()
-        mobileTween(close, 0.14, {BackgroundTransparency = 1})
-        mobileTween(closeStroke, 0.14, {Color = ArgusUITheme.Border, Transparency = 0.55})
-    end)
-    close.Activated:Connect(function()
-        mobileTween(closeStroke, 0.08, {Color = ArgusUITheme.GradientBright, Transparency = 0})
-        ArgusMobile.Visible=false
-        if panelTween then panelTween:Cancel() end
-        panelTween = mobileTween(panelScale, 0.13, {Scale = 0.94})
-        panelTween.Completed:Connect(function(state)
-            if state == Enum.PlaybackState.Completed and not ArgusMobile.Visible then
-                frame.Visible=false
-                panelScale.Scale=0.96
-                if ArgusMobile.Reopen then ArgusMobile.Reopen.Visible=true end
-            end
-        end)
-    end)
-
-    -- Crescrnt reference note: keep the supplied environment snippet as compatibility
-    -- context only. Do not rewrite __namecall or replace print/warn/error globally.
-    -- When the main panel is closed, this compact top-right rectangle doubles as
-    -- a live FPS readout and a one-tap reopen control.
-    local reopen=Instance.new("TextButton")
-    reopen.Name="ArgusFPSPanel"
-    reopen.Text="FPS: --"
-    reopen.TextColor3=ArgusUITheme.Text
-    reopen.TextSize=12
-    reopen.Font=Enum.Font.GothamBold
-    reopen.BackgroundColor3=ArgusUITheme.Panel
-    reopen.BorderColor3=ArgusUITheme.Border
-    mobileGradient(reopen, {
-        ColorSequenceKeypoint.new(0, ArgusUITheme.GradientMid),
-        ColorSequenceKeypoint.new(0.45, ArgusUITheme.Surface),
-        ColorSequenceKeypoint.new(0.52, ArgusUITheme.GradientDark),
-        ColorSequenceKeypoint.new(1, ArgusUITheme.Panel),
-    }, 25)
-    reopen.AutoButtonColor=false
-    reopen.Size=UDim2.fromOffset(112,36)
-    reopen.AnchorPoint=Vector2.new(1,0)
-    -- Top-right FPS panel stays below the Roblox mobile top bar / safe area.
-    reopen.Position=UDim2.new(1,-12,0,12)
-    reopen.Visible=true
-    reopen.Parent=gui
-    mobileCorner(reopen, 14)
-    mobileStroke(reopen, ArgusUITheme.Accent, 0.02, 1.5)
-    ArgusMobile.Reopen=reopen
-    ArgusMobile.FPSPanel=reopen
-    reopen.MouseEnter:Connect(function()
-        mobileTween(reopen, 0.12, {BackgroundColor3 = ArgusUITheme.SurfaceHover})
-    end)
-    reopen.MouseLeave:Connect(function()
-        mobileTween(reopen, 0.12, {BackgroundColor3 = ArgusUITheme.Panel})
-    end)
-    reopen.Activated:Connect(function()
-        ArgusMobile.Visible=true
-        reopen.Visible=false
-        frame.Visible=true
-        if panelTween then panelTween:Cancel() end
-        panelScale.Scale=0.94
-        panelTween = mobileTween(panelScale, 0.2, {Scale = 1}, Enum.EasingStyle.Back)
-    end)
-
-    -- Drag: header works with both touch and mouse.
-    title.InputBegan:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.Touch
-            or input.UserInputType==Enum.UserInputType.MouseButton1 then
-            ArgusMobile.Dragging=true
-            ArgusMobile.DragInput=input
-            ArgusMobile.DragStart=input.Position
-            ArgusMobile.FrameStart=frame.AbsolutePosition
-        end
-    end)
-
-    title.InputChanged:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseMovement
-            or input.UserInputType==Enum.UserInputType.Touch then
-            ArgusMobile.DragInput=input
-        end
-    end)
-
-    trackDragConnection(UserInputService.InputChanged:Connect(function(input)
-        if not ArgusMobile.Dragging then return end
-        if input~=ArgusMobile.DragInput
-            and input.UserInputType~=Enum.UserInputType.MouseMovement
-            and input.UserInputType~=Enum.UserInputType.Touch then
-            return
-        end
-
-        local delta=input.Position-ArgusMobile.DragStart
-        local viewport=workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800,600)
-        local fs=frame.AbsoluteSize
-        local nx=math.clamp(ArgusMobile.FrameStart.X+delta.X,6,math.max(6,viewport.X-fs.X-6))
-        local ny=math.clamp(ArgusMobile.FrameStart.Y+delta.Y,6,math.max(6,viewport.Y-fs.Y-6))
-        frame.Position=UDim2.fromOffset(nx,ny)
-    end))
-
-    trackDragConnection(UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.Touch
-            or input.UserInputType==Enum.UserInputType.MouseButton1 then
-            ArgusMobile.Dragging=false
-            ArgusMobile.DragInput=nil
-        end
-    end))
-
-    argusMobileRebuild()
-end
-
-
 -- ============================================================
 -- Stability / Performance / Recovery Layer
 -- ============================================================
@@ -3474,10 +2445,9 @@ _G.ArgusTargetCacheEnabled = (_G.ArgusTargetCacheEnabled ~= false)
 
 local function argusValidateConfig()
     if not _G.ArgusConfigAutoRepair then return end
-    _G.MobileAimStrength=argusSafeNumber(_G.MobileAimStrength,100,0,100)
-    _G.MobileHeadLockStrength=argusSafeNumber(_G.MobileHeadLockStrength,100,0,100)
-    _G.MobileHeadLockThreshold=argusSafeNumber(_G.MobileHeadLockThreshold,65,0,100)
-    _G.MobileHeadLockGrace=argusSafeNumber(_G.MobileHeadLockGrace,0.12,0,0.5)
+    _G.TargetAssistHeadLockStrength=argusSafeNumber(_G.TargetAssistHeadLockStrength,100,0,100)
+    _G.TargetAssistHeadLockThreshold=argusSafeNumber(_G.TargetAssistHeadLockThreshold,65,0,100)
+    _G.TargetAssistHeadLockGrace=argusSafeNumber(_G.TargetAssistHeadLockGrace,0.12,0,0.5)
     _G.TargetAssistFOVRadius=argusSafeNumber(_G.TargetAssistFOVRadius,180,1,2000)
     _G.TargetAssistMaxDistance=argusSafeNumber(_G.TargetAssistMaxDistance,500,0,10000)
     _G.TargetAssistTargetSwitchDelay=argusSafeNumber(_G.TargetAssistTargetSwitchDelay,0.15,0,2)
@@ -3502,7 +2472,7 @@ local function argusGetCharacterState()
     local character=LocalPlayer.Character
     if character~=ArgusRuntime.LastCharacter then
         ArgusRuntime.LastCharacter=character
-        resetMobileHeadState()
+        resetTargetHeadState()
         if TargetAssist then
             TargetAssist.CurrentTarget=nil
             TargetAssist.ToggleState=false
@@ -3530,7 +2500,7 @@ local function argusGetPerformanceTier()
     return 0
 end
 
-local function argusCachedBestTarget()
+argusCachedBestTarget = function()
     if _G.ArgusTargetCacheEnabled == false then
         local player = getBestTarget()
         ArgusRuntime.TargetCache = player
@@ -3562,7 +2532,7 @@ local function argusWatchdog()
     argusGetCharacterState()
     if TargetAssist.CurrentTarget and not targetAssistIsValid(TargetAssist.CurrentTarget) then
         TargetAssist.CurrentTarget=nil
-        resetMobileHeadState()
+        resetTargetHeadState()
     end
 end
 
@@ -3586,7 +2556,7 @@ Players.PlayerRemoving:Connect(function(player)
         ArgusRuntime.TargetCache=nil
         if TargetAssist.CurrentTarget==player then
             TargetAssist.CurrentTarget=nil
-            resetMobileHeadState()
+            resetTargetHeadState()
         end
     end
 end)
@@ -3594,16 +2564,13 @@ end)
 -- ============================================================
 -- FINAL OPTIMIZATION LAYER
 -- Target/LOS cache, performance budgets, cleanup, config repair,
--- touch safety, camera recovery, state telemetry and fail-safe.
+-- desktop input safety, camera recovery, state telemetry and fail-safe.
 -- ============================================================
 _G.ArgusLOSCacheLifetime = 0.055
 _G.ArgusTargetSearchInterval = 0.035
 _G.ArgusESPAdaptive = true
 _G.ArgusESPMinUpdateRate = 20
 _G.ArgusESPMaxUpdateRate = 60
-_G.ArgusTouchLongPress = true
-_G.ArgusTouchMinHold = 0.045
-_G.ArgusTouchCancelOnUI = true
 _G.ArgusCameraRecovery = true
 _G.ArgusFailSafe = true
 _G.ArgusRuntimeTelemetry = true
@@ -3635,7 +2602,6 @@ local function finalValidate()
     _G.ArgusTargetSearchInterval = finalSafeNumber(_G.ArgusTargetSearchInterval,0.035,0.01,0.25)
     _G.ArgusESPMinUpdateRate = finalSafeNumber(_G.ArgusESPMinUpdateRate,20,10,60)
     _G.ArgusESPMaxUpdateRate = finalSafeNumber(_G.ArgusESPMaxUpdateRate,60,20,120)
-    _G.ArgusTouchMinHold = finalSafeNumber(_G.ArgusTouchMinHold,0.045,0,0.5)
     if _G.ArgusESPMinUpdateRate > _G.ArgusESPMaxUpdateRate then
         _G.ArgusESPMinUpdateRate, _G.ArgusESPMaxUpdateRate = _G.ArgusESPMaxUpdateRate, _G.ArgusESPMinUpdateRate
     end
@@ -3730,15 +2696,11 @@ finalTrackConnection(LocalPlayer.CharacterAdded:Connect(function(character)
     finalInvalidateTarget()
     ArgusFinal.LOS = {}
     ArgusFinal.LastGoodCharacter = character
-    MobileTouchState.Active = false
-    MobileTouchState.Touches = {}
 end))
 
 finalTrackConnection(LocalPlayer.CharacterRemoving:Connect(function()
     finalInvalidateTarget()
     ArgusFinal.LOS = {}
-    MobileTouchState.Active = false
-    MobileTouchState.Touches = {}
 end))
 
 finalTrackConnection(Players.PlayerRemoving:Connect(function(player)
@@ -3787,7 +2749,7 @@ RunService.Heartbeat:Connect(function()
         TargetAssist.CurrentTarget = nil
         TargetAssist.State = 'Reacquiring'
         TargetAssist.ReacquireAt = os.clock() + finalSafeNumber(_G.TargetAssistReacquireDelay,0.12,0,2)
-        resetMobileHeadState()
+        resetTargetHeadState()
         finalInvalidateTarget()
     end
 end)
@@ -3911,7 +2873,7 @@ local function argusCheckTargetAssistHealth()
     local head = targetNow.Character:FindFirstChild("Head")
     if not head then
         ArgusModuleHealth.HeadLock = "Repairing_NoHead"
-        resetMobileHeadState()
+        resetTargetHeadState()
         ArgusModuleHealth.HeadRepairs += 1
         return
     end
@@ -3919,7 +2881,7 @@ local function argusCheckTargetAssistHealth()
     local requestedPart = _G.TargetAssistPart
     local wantsHead = requestedPart == "Head"
         or requestedPart == "Auto"
-        or _G.MobileHeadLockPreferred == true
+        or _G.TargetAssistHeadLockPreferred == true
 
     if not wantsHead then
         ArgusModuleHealth.HeadLock = "Ready_BodyMode"
@@ -3932,7 +2894,7 @@ local function argusCheckTargetAssistHealth()
     else
         -- 不強行改相機；只把 Head Lock 狀態重置，交給下一個 RenderStep 正常重新取得。
         if state ~= "HeadCandidate" then
-            resetMobileHeadState()
+            resetTargetHeadState()
             ArgusModuleHealth.HeadRepairs += 1
         end
         ArgusModuleHealth.HeadLock = "Reacquiring"
@@ -3989,34 +2951,6 @@ task.defer(function()
     argusRunModuleHealthCheck()
 end)
 
-
-argusCreateMobileUI()
-
-if _G.ArgusMobileUIEnabled then
-    -- Keep the FPS readout alive while the main control panel is hidden.
-    task.spawn(function()
-        while ArgusMobile.Gui and ArgusMobile.Gui.Parent do
-            local fps = tonumber(_G.ArgusRuntimeFPS)
-                or (ArgusUI and tonumber(ArgusUI.FPS))
-                or 0
-            if ArgusMobile.FPSPanel and ArgusMobile.FPSPanel.Parent then
-                local fpsText = string.format("FPS: %.0f", fps)
-                if ArgusMobile.FPSPanel.Text ~= fpsText then
-                    ArgusMobile.FPSPanel.Text = fpsText
-                end
-                local shouldShowFPS = not (ArgusMobile.Frame and ArgusMobile.Frame.Visible)
-                if ArgusMobile.FPSPanel.Visible ~= shouldShowFPS then
-                    ArgusMobile.FPSPanel.Visible = shouldShowFPS
-                end
-            end
-            if ArgusMobile.Frame and ArgusMobile.Frame.Visible then
-                local status=argusGetTargetStatus()
-                ArgusMobile.Frame:SetAttribute("Status",tostring(status))
-            end
-            task.wait(0.25)
-        end
-    end)
-end
 
 -- Loader handshake: set only after the entrypoint reaches its final initialization section.
 _G.__ARGUS_INIT_STATUS = "ready"
