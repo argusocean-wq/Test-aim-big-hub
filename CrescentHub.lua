@@ -1208,8 +1208,8 @@ end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.RightShift then
-        _G.TargetAssistVisualsHidden = not _G.TargetAssistVisualsHidden
+    -- RightShift is reserved for the main panel toggle; do not bind a second action here.
+    if input.KeyCode == _G.ArgusUIKey then
         return
     end
     if input.KeyCode == _G.TargetAssistToggleKey then
@@ -1586,7 +1586,7 @@ if ThirdPersonState.Enabled then task.defer(function() applyThirdPerson(true) en
 -- ============================================================
 
 _G.ArgusUIEnabled = true
-_G.ArgusUIKey = Enum.KeyCode.RightControl
+_G.ArgusUIKey = Enum.KeyCode.RightShift
 _G.ArgusDebugMode = false
 _G.ArgusESPPerformance = true
 _G.ArgusESPUpdateRate = 60
@@ -1623,7 +1623,7 @@ local ArgusProfiles = {}
 local ArgusKeybinds = {
     AimToggle = _G.TargetAssistToggleKey,
     UI = _G.ArgusUIKey,
-    VisualHide = Enum.KeyCode.RightShift,
+    VisualHide = nil,
 }
 
 local function argusNewSquare(filled, thickness)
@@ -2104,7 +2104,7 @@ local function argusRebuildBody()
             argusToast("Visual hide remains "..ArgusKeybinds.VisualHide.Name)
         end)
         argusText("Click the Aim Key button to cycle Q / E / T / LeftAlt.", x, y+135, 10, Color3.fromRGB(150,150,150))
-        argusText("UI toggle uses RightControl to avoid the existing RightShift visual hide.", x, y+155, 10, Color3.fromRGB(150,150,150))
+        argusText("RightShift toggles the main panel.", x, y+155, 10, Color3.fromRGB(150,150,150))
 
     elseif ArgusUI.Tab == "Debug" then
         argusText("DEBUG / DIAGNOSTICS", x, y, 11, Color3.fromRGB(170,170,170))
@@ -2321,7 +2321,7 @@ RunService.RenderStepped:Connect(function(dt)
         ArgusDraw.Status.Transparency=alpha
         ArgusDraw.Status.Visible=alpha>0.01
 
-        ArgusDraw.Footer.Text="RightControl: UI  |  RightShift: Visual Hide"
+        ArgusDraw.Footer.Text="RightShift: UI"
         ArgusDraw.Footer.Position=Vector2.new(mx+ArgusUI.W-225+slide,my+ArgusUI.H-32+slide)
         ArgusDraw.Footer.Transparency=alpha
         ArgusDraw.Footer.Visible=alpha>0.01
